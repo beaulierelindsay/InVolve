@@ -330,7 +330,7 @@ class _CategoryCard extends StatelessWidget {
           borderRadius: BorderRadius.circular(20),
           boxShadow: isSelected
               ? []
-              : [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 4, offset: const Offset(0, 1))],
+              : [BoxShadow(color: Colors.black.withValues(alpha: 0.03), blurRadius: 4, offset: const Offset(0, 1))],
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -341,7 +341,7 @@ class _CategoryCard extends StatelessWidget {
                   width: 42,
                   height: 42,
                   decoration: BoxDecoration(
-                    color: category.color.withOpacity(0.1),
+                    color: category.color.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Icon(category.icon, color: category.color, size: 22),
@@ -386,7 +386,7 @@ class _CategoryCard extends StatelessWidget {
               children: category.examples.map((ex) => Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
-                  color: isSelected ? category.color.withOpacity(0.1) : AppColors.ground,
+                  color: isSelected ? category.color.withValues(alpha: 0.1) : AppColors.ground,
                   borderRadius: BorderRadius.circular(20),
                 ),
                 child: Text(

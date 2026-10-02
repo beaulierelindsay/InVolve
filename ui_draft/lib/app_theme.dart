@@ -97,7 +97,7 @@ class AppTheme {
         surfaceTintColor: Colors.transparent,
       ),
       bottomNavigationBarTheme: BottomNavigationBarThemeData(
-        backgroundColor: AppColors.canvas.withOpacity(0.95),
+        backgroundColor: AppColors.canvas.withValues(alpha: 0.95),
         selectedItemColor: AppColors.forest,
         unselectedItemColor: AppColors.inkMuted,
         selectedLabelStyle: GoogleFonts.outfit(fontSize: 10, fontWeight: FontWeight.w600),

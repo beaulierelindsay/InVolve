@@ -58,7 +58,7 @@ class ExplorePage extends StatelessWidget {
                               decoration: BoxDecoration(
                                 color: AppColors.forest,
                                 borderRadius: BorderRadius.circular(18),
-                                boxShadow: [BoxShadow(color: AppColors.forest.withOpacity(0.3), blurRadius: 16, offset: const Offset(0, 6))],
+                                boxShadow: [BoxShadow(color: AppColors.forest.withValues(alpha: 0.3), blurRadius: 16, offset: const Offset(0, 6))],
                               ),
                               child: const Icon(Icons.location_on, color: Colors.white, size: 32),
                             ),
@@ -90,7 +90,7 @@ class ExplorePage extends StatelessWidget {
                         color: AppColors.canvas,
                         borderRadius: BorderRadius.circular(20),
                         border: Border.all(color: AppColors.border),
-                        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 8)],
+                        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 8)],
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
@@ -117,7 +117,7 @@ class _ExploreMapPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final gridPaint = Paint()
-      ..color = const Color(0xFF1B4D3E).withOpacity(0.1)
+      ..color = const Color(0xFF1B4D3E).withValues(alpha: 0.1)
       ..strokeWidth = 1;
 
     for (int i = 0; i < 12; i++) {
@@ -129,17 +129,17 @@ class _ExploreMapPainter extends CustomPainter {
       canvas.drawLine(Offset(x, 0), Offset(x, size.height), gridPaint);
     }
 
-    final blockPaint = Paint()..color = const Color(0xFF1B4D3E).withOpacity(0.15);
+    final blockPaint = Paint()..color = const Color(0xFF1B4D3E).withValues(alpha: 0.15);
     final rr = const Radius.circular(6);
     canvas.drawRRect(RRect.fromLTRBR(30, 40, 140, 110, rr), blockPaint);
-    canvas.drawRRect(RRect.fromLTRBR(160, 30, 280, 80, rr), blockPaint..color = const Color(0xFF1B4D3E).withOpacity(0.10));
-    canvas.drawRRect(RRect.fromLTRBR(300, 50, 420, 130, rr), blockPaint..color = const Color(0xFF1B4D3E).withOpacity(0.13));
-    canvas.drawRRect(RRect.fromLTRBR(30, 130, 100, 240, rr), blockPaint..color = const Color(0xFF1B4D3E).withOpacity(0.11));
-    canvas.drawRRect(RRect.fromLTRBR(120, 100, 270, 180, rr), blockPaint..color = const Color(0xFF1B4D3E).withOpacity(0.08));
-    canvas.drawRRect(RRect.fromLTRBR(290, 150, 390, 210, rr), blockPaint..color = const Color(0xFF1B4D3E).withOpacity(0.12));
+    canvas.drawRRect(RRect.fromLTRBR(160, 30, 280, 80, rr), blockPaint..color = const Color(0xFF1B4D3E).withValues(alpha: 0.10));
+    canvas.drawRRect(RRect.fromLTRBR(300, 50, 420, 130, rr), blockPaint..color = const Color(0xFF1B4D3E).withValues(alpha: 0.13));
+    canvas.drawRRect(RRect.fromLTRBR(30, 130, 100, 240, rr), blockPaint..color = const Color(0xFF1B4D3E).withValues(alpha: 0.11));
+    canvas.drawRRect(RRect.fromLTRBR(120, 100, 270, 180, rr), blockPaint..color = const Color(0xFF1B4D3E).withValues(alpha: 0.08));
+    canvas.drawRRect(RRect.fromLTRBR(290, 150, 390, 210, rr), blockPaint..color = const Color(0xFF1B4D3E).withValues(alpha: 0.12));
 
     final roadPaint = Paint()
-      ..color = const Color(0xFF2D6A55).withOpacity(0.3)
+      ..color = const Color(0xFF2D6A55).withValues(alpha: 0.3)
       ..strokeWidth = 3
       ..strokeCap = StrokeCap.round;
     canvas.drawLine(Offset(0, size.height * 0.55), Offset(size.width, size.height * 0.55), roadPaint);

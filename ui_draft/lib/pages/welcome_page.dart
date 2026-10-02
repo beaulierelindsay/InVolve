@@ -153,7 +153,7 @@ class _WelcomePageState extends State<WelcomePage> {
                                 shape: BoxShape.circle,
                                 boxShadow: [
                                   BoxShadow(
-                                    color: AppColors.forest.withOpacity(0.3),
+                                    color: AppColors.forest.withValues(alpha: 0.3),
                                     blurRadius: 12,
                                     offset: const Offset(0, 4),
                                   ),
@@ -384,7 +384,7 @@ class _MapGridPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
-      ..color = const Color(0xFF1B4D3E).withOpacity(0.12)
+      ..color = const Color(0xFF1B4D3E).withValues(alpha: 0.12)
       ..strokeWidth = 0.8;
 
     // Horizontal lines
@@ -398,12 +398,12 @@ class _MapGridPainter extends CustomPainter {
       canvas.drawLine(Offset(x, 0), Offset(x, size.height), paint);
     }
 
-    final blockPaint = Paint()..color = const Color(0xFF1B4D3E).withOpacity(0.18);
+    final blockPaint = Paint()..color = const Color(0xFF1B4D3E).withValues(alpha: 0.18);
     final rr = const Radius.circular(4);
     canvas.drawRRect(RRect.fromLTRBR(60, 40, 150, 90, rr), blockPaint);
-    canvas.drawRRect(RRect.fromLTRBR(170, 35, 270, 65, rr), blockPaint..color = const Color(0xFF1B4D3E).withOpacity(0.12));
-    canvas.drawRRect(RRect.fromLTRBR(60, 105, 130, 185, rr), blockPaint..color = const Color(0xFF1B4D3E).withOpacity(0.15));
-    canvas.drawRRect(RRect.fromLTRBR(145, 85, 265, 145, rr), blockPaint..color = const Color(0xFF1B4D3E).withOpacity(0.10));
+    canvas.drawRRect(RRect.fromLTRBR(170, 35, 270, 65, rr), blockPaint..color = const Color(0xFF1B4D3E).withValues(alpha: 0.12));
+    canvas.drawRRect(RRect.fromLTRBR(60, 105, 130, 185, rr), blockPaint..color = const Color(0xFF1B4D3E).withValues(alpha: 0.15));
+    canvas.drawRRect(RRect.fromLTRBR(145, 85, 265, 145, rr), blockPaint..color = const Color(0xFF1B4D3E).withValues(alpha: 0.10));
   }
 
   @override

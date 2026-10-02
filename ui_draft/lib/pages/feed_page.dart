@@ -1,101 +1,100 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../app_theme.dart';
-
+import '../models/category.dart'; // adjust path to wherever category.dart lives
+ 
 class _Event {
-  final String type;
+  final String id;
+  final String categoryId; // must match an EngagementCategory.id
   final String title;
   final String org;
   final String date;
   final String distance;
   final String action;
-  final Color color;
-  final Color lightColor;
   final String description;
   final int? spots;
-
+ 
   const _Event({
-    required this.type,
+    required this.id,
+    required this.categoryId,
     required this.title,
     required this.org,
     required this.date,
     required this.distance,
     required this.action,
-    required this.color,
-    required this.lightColor,
     required this.description,
     this.spots,
   });
+ 
+  // Display info comes from the category model, never duplicated on the event.
+  EngagementCategory get category => categoryById(categoryId);
 }
-
+ 
 const _events = [
   _Event(
-    type: 'Civic',
+    id: 'evt-001',
+    categoryId: CategoryIds.civic,
     title: 'Community Board 6 Monthly Meeting',
     org: 'Brooklyn Community Board 6',
     date: 'Thu, Sep 24 · 7:00 PM',
     distance: '0.4 mi',
     action: 'Add to calendar',
-    color: Color(0xFF1B4D3E),
-    lightColor: Color(0xFFE8F0ED),
     description: 'Public session covering zoning proposals, housing updates, and open comment period.',
   ),
   _Event(
-    type: 'Volunteer',
+    id: 'evt-002',
+    categoryId: CategoryIds.directService,
     title: 'Weekend Shift — Food Pantry',
     org: 'Park Slope Food Coop',
     date: 'Sat, Sep 27 · 9:00–12:00 AM',
     distance: '0.7 mi',
     action: 'Sign up',
-    color: Color(0xFFC9631A),
-    lightColor: Color(0xFFFDF0E6),
     description: 'Help sort and distribute groceries to 200+ households. All training provided on-site.',
     spots: 4,
   ),
   _Event(
-    type: 'Stewardship',
+    id: 'evt-003',
+    categoryId: CategoryIds.neighborhood,
     title: 'Prospect Park Fall Cleanup',
     org: 'Prospect Park Alliance',
     date: 'Sun, Sep 28 · 10:00 AM',
     distance: '1.1 mi',
     action: 'RSVP',
-    color: Color(0xFF2D6A55),
-    lightColor: Color(0xFFE4F0EB),
     description: 'Join 60+ volunteers for a seasonal trail and meadow cleanup. Gloves & tools provided.',
     spots: 18,
   ),
   _Event(
-    type: 'Causes',
+    id: 'evt-004',
+    categoryId: CategoryIds.causeAction,
     title: 'Tenant Rights Letter-Writing Bank',
     org: 'Right to Counsel NYC',
     date: 'Wed, Sep 24 · 6:30 PM',
     distance: '1.8 mi',
     action: 'Join session',
-    color: Color(0xFF5B3A8C),
-    lightColor: Color(0xFFEEE8F5),
     description: 'Write letters to council members supporting the expansion of free legal counsel for tenants.',
   ),
 ];
-
-const _filters = ['All', 'Civic', 'Volunteer', 'Causes', 'Culture', 'Mutual Aid'];
-
+ 
 class FeedPage extends StatefulWidget {
   const FeedPage({super.key});
-
+ 
   @override
   State<FeedPage> createState() => _FeedPageState();
 }
-
+ 
 class _FeedPageState extends State<FeedPage> {
-  String _activeFilter = 'All';
-  final Set<int> _saved = {};
-
-  List<_Event> get _visible => _activeFilter == 'All'
+  // null = "All"; otherwise an EngagementCategory.id
+  String? _activeCategoryId;
+  final Set<String> _saved = {}; // event ids, so bookmarks survive filter changes
+ 
+  List<_Event> get _visible => _activeCategoryId == null
       ? _events
-      : _events.where((e) => e.type.toLowerCase().contains(_activeFilter.toLowerCase())).toList();
-
+      : _events.where((e) => e.categoryId == _activeCategoryId).toList();
+ 
   @override
   Widget build(BuildContext context) {
+    final visible = _visible;
+ 
     return Scaffold(
       backgroundColor: AppColors.ground,
       body: CustomScrollView(
@@ -159,13 +158,16 @@ class _FeedPageState extends State<FeedPage> {
                 child: ListView.separated(
                   scrollDirection: Axis.horizontal,
                   padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-                  itemCount: _filters.length,
+                  // +1 for the "All" chip at index 0; the rest are generated
+                  // from allCategories so chips can never drift from the model.
+                  itemCount: allCategories.length + 1,
                   separatorBuilder: (_, __) => const SizedBox(width: 8),
                   itemBuilder: (context, i) {
-                    final f = _filters[i];
-                    final isActive = _activeFilter == f;
+                    final String? chipId = i == 0 ? null : allCategories[i - 1].id;
+                    final String chipLabel = i == 0 ? 'All' : allCategories[i - 1].shortLabel;
+                    final isActive = _activeCategoryId == chipId;
                     return GestureDetector(
-                      onTap: () => setState(() => _activeFilter = f),
+                      onTap: () => setState(() => _activeCategoryId = chipId),
                       child: AnimatedContainer(
                         duration: const Duration(milliseconds: 150),
                         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
@@ -175,7 +177,7 @@ class _FeedPageState extends State<FeedPage> {
                           border: isActive ? null : Border.all(color: AppColors.border),
                         ),
                         child: Text(
-                          f,
+                          chipLabel,
                           style: GoogleFonts.outfit(
                             fontSize: 12,
                             fontWeight: FontWeight.w500,
@@ -194,19 +196,20 @@ class _FeedPageState extends State<FeedPage> {
             sliver: SliverList(
               delegate: SliverChildBuilderDelegate(
                 (context, i) {
-                  if (i >= _visible.length) return null;
-                  final event = _visible[i];
-                  final isSaved = _saved.contains(i);
+                  final event = visible[i];
+                  final isSaved = _saved.contains(event.id);
                   return Padding(
                     padding: const EdgeInsets.only(bottom: 12),
                     child: _EventCard(
                       event: event,
                       isSaved: isSaved,
-                      onSave: () => setState(() => isSaved ? _saved.remove(i) : _saved.add(i)),
+                      onSave: () => setState(
+                        () => isSaved ? _saved.remove(event.id) : _saved.add(event.id),
+                      ),
                     ),
                   );
                 },
-                childCount: _visible.length,
+                childCount: visible.length,
               ),
             ),
           ),
@@ -215,16 +218,18 @@ class _FeedPageState extends State<FeedPage> {
     );
   }
 }
-
+ 
 class _EventCard extends StatelessWidget {
   final _Event event;
   final bool isSaved;
   final VoidCallback onSave;
-
+ 
   const _EventCard({required this.event, required this.isSaved, required this.onSave});
-
+ 
   @override
   Widget build(BuildContext context) {
+    final category = event.category;
+ 
     return Container(
       decoration: BoxDecoration(
         color: AppColors.canvas,
@@ -241,10 +246,10 @@ class _EventCard extends StatelessWidget {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                   decoration: BoxDecoration(
-                    color: event.lightColor,
+                    color: category.lightColor,
                     borderRadius: BorderRadius.circular(20),
                   ),
-                  child: Text(event.type, style: GoogleFonts.outfit(fontSize: 11, fontWeight: FontWeight.w600, color: event.color)),
+                  child: Text(category.shortLabel, style: GoogleFonts.outfit(fontSize: 11, fontWeight: FontWeight.w600, color: category.color)),
                 ),
                 const Spacer(),
                 if (event.spots != null)
@@ -255,7 +260,7 @@ class _EventCard extends StatelessWidget {
                   child: Icon(
                     isSaved ? Icons.bookmark : Icons.bookmark_outline,
                     size: 20,
-                    color: isSaved ? event.color : AppColors.inkMuted,
+                    color: isSaved ? category.color : AppColors.inkMuted,
                   ),
                 ),
               ],
@@ -280,7 +285,7 @@ class _EventCard extends StatelessWidget {
                 ElevatedButton(
                   onPressed: () {},
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: event.color,
+                    backgroundColor: category.color,
                     padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                     minimumSize: Size.zero,
                     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
@@ -296,3 +301,4 @@ class _EventCard extends StatelessWidget {
     );
   }
 }
+ 
