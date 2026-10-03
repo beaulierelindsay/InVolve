@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "394469341313",
+    "project_id": "involve-2815c",
+    "storage_bucket": "involve-2815c.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:394469341313:android:2d6b86b4f0008d2b243580",
+        "android_client_info": {
+          "package_name": "com.example.involve"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBL5DOiWWAGTOtW8tQnJMwY_Kr5cPsZ9_Q"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
