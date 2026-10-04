@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../app_theme.dart';
-import '../models/category.dart'; // adjust path to wherever category.dart lives
+import '../models/category.dart';
+import '../services/preferences_store.dart';
+
+// Sentinel for the personalized chip. null means "All".
+const _forYouId = '__for_you__';
  
 class _Event {
   final String id;
@@ -86,14 +90,51 @@ class _FeedPageState extends State<FeedPage> {
   // null = "All"; otherwise an EngagementCategory.id
   String? _activeCategoryId;
   final Set<String> _saved = {}; // event ids, so bookmarks survive filter changes
+
+  @override
+  void initState() {
+    super.initState();
+    // Land on "For you" if the user picked interests; otherwise show everything.
+    _activeCategoryId =
+        PreferencesStore.instance.prefs.hasInterests ? _forYouId : null;
+    PreferencesStore.instance.addListener(_onPrefsChanged);
+  }
+
+  void _onPrefsChanged() {
+    if (!mounted) return;
+    setState(() {
+      // If interests were cleared while "For you" was active, fall back to All.
+      if (_activeCategoryId == _forYouId &&
+          !PreferencesStore.instance.prefs.hasInterests) {
+        _activeCategoryId = null;
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    PreferencesStore.instance.removeListener(_onPrefsChanged);
+    super.dispose();
+  }
  
-  List<_Event> get _visible => _activeCategoryId == null
-      ? _events
-      : _events.where((e) => e.categoryId == _activeCategoryId).toList();
+  List<_Event> get _visible {
+    if (_activeCategoryId == null) return _events;
+    if (_activeCategoryId == _forYouId) {
+      final mine = PreferencesStore.instance.prefs.categoryIds;
+      return _events.where((e) => mine.contains(e.categoryId)).toList();
+    }
+    return _events.where((e) => e.categoryId == _activeCategoryId).toList();
+  }
  
   @override
   Widget build(BuildContext context) {
     final visible = _visible;
+    final prefs = PreferencesStore.instance.prefs;
+    final chips = <({String? id, String label})>[
+      if (prefs.hasInterests) (id: _forYouId, label: 'For you'),
+      (id: null, label: 'All'),
+      for (final c in allCategories) (id: c.id, label: c.shortLabel),
+    ];
  
     return Scaffold(
       backgroundColor: AppColors.ground,
@@ -120,7 +161,7 @@ class _FeedPageState extends State<FeedPage> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            'BROOKLYN, NY',
+                            prefs.locationLabel.toUpperCase(),
                             style: GoogleFonts.outfit(fontSize: 10, fontWeight: FontWeight.w600, letterSpacing: 1.4, color: AppColors.amber),
                           ),
                           const SizedBox(height: 4),
@@ -158,13 +199,13 @@ class _FeedPageState extends State<FeedPage> {
                 child: ListView.separated(
                   scrollDirection: Axis.horizontal,
                   padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-                  // +1 for the "All" chip at index 0; the rest are generated
-                  // from allCategories so chips can never drift from the model.
-                  itemCount: allCategories.length + 1,
+                  // Chips are generated from allCategories (plus "For you"/"All"),
+                  // so they can never drift from the model.
+                  itemCount: chips.length,
                   separatorBuilder: (_, __) => const SizedBox(width: 8),
                   itemBuilder: (context, i) {
-                    final String? chipId = i == 0 ? null : allCategories[i - 1].id;
-                    final String chipLabel = i == 0 ? 'All' : allCategories[i - 1].shortLabel;
+                    final String? chipId = chips[i].id;
+                    final String chipLabel = chips[i].label;
                     final isActive = _activeCategoryId == chipId;
                     return GestureDetector(
                       onTap: () => setState(() => _activeCategoryId = chipId),
@@ -191,6 +232,22 @@ class _FeedPageState extends State<FeedPage> {
               ),
             ),
           ),
+          if (visible.isEmpty)
+            SliverFillRemaining(
+              hasScrollBody: false,
+              child: Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(32),
+                  child: Text(
+                    _activeCategoryId == _forYouId
+                        ? 'Nothing matching your interests yet.\nTry "All" or edit your interests in the You tab.'
+                        : 'No events in this category yet.',
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.outfit(fontSize: 13, color: AppColors.inkMuted, height: 1.5),
+                  ),
+                ),
+              ),
+            ),
           SliverPadding(
             padding: const EdgeInsets.fromLTRB(20, 16, 20, 100),
             sliver: SliverList(
@@ -301,4 +358,3 @@ class _EventCard extends StatelessWidget {
     );
   }
 }
- 

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../app_theme.dart';
+import '../services/preferences_store.dart';
 
 class WelcomePage extends StatefulWidget {
   const WelcomePage({super.key});
@@ -12,7 +13,7 @@ class WelcomePage extends StatefulWidget {
 
 class _WelcomePageState extends State<WelcomePage> {
   final _locationController = TextEditingController();
-  String _confirmedLocation = 'Brooklyn, New York';
+  String _confirmedLocation = PreferencesStore.instance.prefs.locationLabel;
   bool _locating = false;
   bool _locationSet = false;
 
@@ -32,6 +33,7 @@ class _WelcomePageState extends State<WelcomePage> {
       _locating = false;
       _locationSet = true;
     });
+    PreferencesStore.instance.setLocation(_confirmedLocation);
   }
 
   void _confirmLocation() {
@@ -40,6 +42,7 @@ class _WelcomePageState extends State<WelcomePage> {
         _confirmedLocation = _locationController.text.trim();
         _locationSet = true;
       });
+      PreferencesStore.instance.setLocation(_confirmedLocation);
     }
   }
 

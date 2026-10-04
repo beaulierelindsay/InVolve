@@ -2,8 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'app_theme.dart';
 import 'router.dart';
+import 'services/preferences_store.dart';
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(
@@ -11,6 +12,7 @@ void main() {
       statusBarIconBrightness: Brightness.dark,
     ),
   );
+  await PreferencesStore.instance.load();
   runApp(const InVolveApp());
 }
 

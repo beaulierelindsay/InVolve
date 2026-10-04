@@ -2,11 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../app_theme.dart';
+import '../models/category.dart';
+import '../services/preferences_store.dart';
 
 class ProfilePage extends StatelessWidget {
   const ProfilePage({super.key});
 
-  static const _interests = ['Civic Meetings', 'Direct-Service Volunteering', 'Neighborhood Stewardship'];
   static const _stats = [
     (n: '3', label: 'Events\nattended'),
     (n: '1', label: 'Shifts\ncompleted'),
@@ -15,6 +16,9 @@ class ProfilePage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final prefs = PreferencesStore.instance.prefs;
+    final myCategories =
+        allCategories.where((c) => prefs.categoryIds.contains(c.id)).toList();
     return Scaffold(
       backgroundColor: AppColors.ground,
       body: CustomScrollView(
@@ -109,15 +113,19 @@ class ProfilePage extends StatelessWidget {
                         ],
                       ),
                       const SizedBox(height: 12),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: _interests.map((i) => Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                          decoration: BoxDecoration(color: AppColors.forestLight, borderRadius: BorderRadius.circular(20)),
-                          child: Text(i, style: GoogleFonts.outfit(fontSize: 11, fontWeight: FontWeight.w600, color: AppColors.forest)),
-                        )).toList(),
-                      ),
+                      if (myCategories.isEmpty)
+                        Text('No interests yet — tap Edit to pick some.',
+                            style: GoogleFonts.outfit(fontSize: 12, color: AppColors.inkMuted))
+                      else
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: myCategories.map((c) => Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                            decoration: BoxDecoration(color: c.lightColor, borderRadius: BorderRadius.circular(20)),
+                            child: Text(c.shortLabel, style: GoogleFonts.outfit(fontSize: 11, fontWeight: FontWeight.w600, color: c.color)),
+                          )).toList(),
+                        ),
                     ],
                   ),
                 ),
@@ -140,7 +148,7 @@ class ProfilePage extends StatelessWidget {
                           children: [
                             Text('LOCATION', style: GoogleFonts.outfit(fontSize: 10, fontWeight: FontWeight.w600, letterSpacing: 1.2, color: AppColors.inkMuted)),
                             const SizedBox(height: 6),
-                            Text('Brooklyn, New York', style: GoogleFonts.outfit(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.ink)),
+                            Text(prefs.locationLabel, style: GoogleFonts.outfit(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.ink)),
                           ],
                         ),
                       ),

@@ -28,7 +28,7 @@ class AppTheme {
     return ThemeData(
       useMaterial3: true,
       scaffoldBackgroundColor: AppColors.ground,
-      colorScheme: ColorScheme.light(
+      colorScheme: const ColorScheme.light(
         primary: AppColors.forest,
         secondary: AppColors.amber,
         surface: AppColors.canvas,
@@ -36,7 +36,7 @@ class AppTheme {
         onSecondary: Colors.white,
         onSurface: AppColors.ink,
       ),
-      textTheme: GoogleFonts.outfitTextTheme().copyWith(
+      textTheme: TextTheme(
         displayLarge: GoogleFonts.fraunces(
           fontSize: 36,
           fontWeight: FontWeight.w300,
@@ -88,7 +88,7 @@ class AppTheme {
           color: AppColors.inkMuted,
         ),
       ),
-      appBarTheme: AppBarTheme(
+      appBarTheme: const AppBarTheme(
         backgroundColor: AppColors.canvas,
         foregroundColor: AppColors.ink,
         elevation: 0,
@@ -110,15 +110,15 @@ class AppTheme {
         fillColor: AppColors.ground,
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: AppColors.border),
+          borderSide: const BorderSide(color: AppColors.border),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: AppColors.border),
+          borderSide: const BorderSide(color: AppColors.border),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: AppColors.forest, width: 1.5),
+          borderSide: const BorderSide(color: AppColors.forest, width: 1.5),
         ),
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         hintStyle: GoogleFonts.outfit(color: AppColors.inkMuted, fontSize: 13),

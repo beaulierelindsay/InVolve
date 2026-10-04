@@ -3,6 +3,9 @@ import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../app_theme.dart';
 import '../models/category.dart';
+import '../services/preferences_store.dart';
+
+const int _totalSteps = 2; // category picker + commitment
 
 class InterestsPage extends StatefulWidget {
   const InterestsPage({super.key});
@@ -15,6 +18,25 @@ class _InterestsPageState extends State<InterestsPage> {
   final Set<String> _selected = {};
   String? _commitment;
   int _step = 1;
+
+  @override
+  void initState() {
+    super.initState();
+    // Pre-fill from saved prefs so "Edit" on the profile shows current choices.
+    final saved = PreferencesStore.instance.prefs;
+    _selected.addAll(saved.categoryIds);
+    _commitment = saved.commitment;
+  }
+
+  Future<void> _finish() async {
+    final store = PreferencesStore.instance;
+    await store.update(store.prefs.copyWith(
+      categoryIds: {..._selected},
+      commitment: _commitment,
+    ));
+    if (!mounted) return;
+    context.go('/feed');
+  }
 
   static const _commitmentLevels = [
     (id: 'drop-in', label: 'Drop-in', sub: 'One-time, when I can'),
@@ -48,7 +70,7 @@ class _InterestsPageState extends State<InterestsPage> {
             : IconButton(
                 icon: const Icon(Icons.arrow_back_ios_new, size: 18),
                 color: AppColors.inkMid,
-                onPressed: () => context.pop(),
+                onPressed: () => context.canPop() ? context.pop() : context.go('/feed'),
               ),
         title: _StepIndicator(step: _step),
         centerTitle: true,
@@ -281,7 +303,7 @@ class _InterestsPageState extends State<InterestsPage> {
           ElevatedButton(
             onPressed: _step == 1
                 ? (canContinue ? () => setState(() => _step = 2) : null)
-                : (_commitment != null ? () => context.go('/feed') : null),
+                : (_commitment != null ? _finish : null),
             style: ElevatedButton.styleFrom(
               backgroundColor: _step == 1
                   ? (canContinue ? AppColors.forest : AppColors.border)
@@ -415,7 +437,7 @@ class _StepIndicator extends StatelessWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        ...List.generate(3, (i) {
+        ...List.generate(_totalSteps, (i) {
           final isActive = i + 1 <= step;
           final isCurrent = i + 1 == step;
           return AnimatedContainer(
@@ -431,7 +453,7 @@ class _StepIndicator extends StatelessWidget {
         }),
         const SizedBox(width: 8),
         Text(
-          'Step $step of 3',
+          'Step $step of $_totalSteps',
           style: GoogleFonts.outfit(fontSize: 11, color: AppColors.inkMuted),
         ),
       ],
