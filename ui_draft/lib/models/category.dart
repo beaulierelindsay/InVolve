@@ -120,3 +120,44 @@ EngagementCategory categoryById(String id) {
   );
 }
  
+/// Free-text labels that might appear in Firestore documents or API data,
+/// mapped to canonical category ids. Extend this as new sources are added.
+/// (After normalizing: lowercase, "&" -> "and", non-alphanumerics -> "-".)
+const Map<String, String> _categoryAliases = {
+  'civic-meetings': CategoryIds.civic,
+  'civic-meetings-and-public-hearings': CategoryIds.civic,
+  'volunteer': CategoryIds.directService,
+  'volunteering': CategoryIds.directService,
+  'direct-service-volunteering': CategoryIds.directService,
+  'stewardship': CategoryIds.neighborhood,
+  'neighborhood-stewardship': CategoryIds.neighborhood,
+  'environment': CategoryIds.neighborhood,
+  'causes': CategoryIds.causeAction,
+  'cause': CategoryIds.causeAction,
+  'cause-actions': CategoryIds.causeAction,
+  'fundraising': CategoryIds.causeAction,
+  'culture': CategoryIds.localCulture,
+  'arts': CategoryIds.localCulture,
+  'arts-culture': CategoryIds.localCulture,
+  'arts-and-culture': CategoryIds.localCulture,
+  'local-arts-and-culture': CategoryIds.localCulture,
+  'mutual-aid-and-crisis-support': CategoryIds.mutualAid,
+  'crisis-support': CategoryIds.mutualAid,
+};
+
+/// Translate a raw category string (e.g. "Civic", "Volunteer", "civic")
+/// into a canonical id, or null if it can't be recognized.
+String? categoryIdFromRaw(String? raw) {
+  if (raw == null) return null;
+  final key = raw
+      .trim()
+      .toLowerCase()
+      .replaceAll('&', 'and')
+      .replaceAll(RegExp(r'[^a-z0-9]+'), '-')
+      .replaceAll(RegExp(r'^-+|-+$'), '');
+  if (key.isEmpty) return null;
+  for (final c in allCategories) {
+    if (c.id == key) return c.id;
+  }
+  return _categoryAliases[key];
+}
