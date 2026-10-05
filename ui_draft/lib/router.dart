@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'pages/welcome_page.dart';
@@ -8,6 +9,7 @@ import 'pages/explore_page.dart';
 import 'pages/volunteer_page.dart';
 import 'pages/saved_page.dart';
 import 'pages/profile_page.dart';
+import 'pages/wireframes_page.dart';
 
 final _shellNavigatorKey = GlobalKey<NavigatorState>();
 
@@ -22,6 +24,12 @@ final router = GoRouter(
       path: '/interests',
       builder: (context, state) => const InterestsPage(),
     ),
+    // Dev-only wireframe gallery. Kept out of release builds.
+    if (kDebugMode)
+      GoRoute(
+        path: '/wireframes',
+        builder: (context, state) => const WireframesPage(),
+      ),
     ShellRoute(
       navigatorKey: _shellNavigatorKey,
       builder: (context, state, child) => MainShell(child: child),
