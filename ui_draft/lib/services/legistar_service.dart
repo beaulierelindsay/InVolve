@@ -6,9 +6,6 @@ import '../models/events.dart';
 
 /// Fetches public meetings and hearings from the Legistar Web API.
 /// Docs: https://webapi.legistar.com/Help
-///
-/// The token is supplied at build time so it stays out of source control:
-///   flutter run --dart-define-from-file=legistar.json
 class LegistarService {
   static const _token = String.fromEnvironment('LEGISTAR_TOKEN');
 
