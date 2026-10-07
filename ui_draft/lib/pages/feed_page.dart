@@ -3,10 +3,11 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../app_theme.dart';
 import '../models/category.dart';
-import '../models/event.dart';
+import '../models/events.dart';
 import '../services/event_service.dart';
 import '../services/mock_events.dart';
 import '../services/preferences_store.dart';
+import '../services/legistar_service.dart';
 
 /// Flip to true to develop against placeholder data (no Firestore needed).
 const bool _useMockEvents = false;
@@ -17,13 +18,53 @@ const _forYouId = '__for_you__';
 class FeedPage extends StatefulWidget {
   const FeedPage({super.key});
 
+
   @override
   State<FeedPage> createState() => _FeedPageState();
 }
 
+
 class _FeedPageState extends State<FeedPage> {
   // null = "All"; _forYouId = interests; otherwise an EngagementCategory.id
   String? _activeCategoryId;
+  final Set<String> _saved =
+      {}; // event ids, so bookmarks survive filter changes
+
+  final _legistar = LegistarService();
+  List<Event> _liveEvents = [];
+  bool _loading = true;
+  String? _loadError;
+
+  List<Event> get _events => [..._liveEvents, ..._mockEvents];
+
+  List<Event> get _visible => _activeCategoryId == null
+      ? _events
+      : _events.where((e) => e.categoryId == _activeCategoryId).toList();
+
+  @override
+  void initState() {
+    super.initState();
+    _loadLiveEvents();
+  }
+
+  Future<void> _loadLiveEvents() async {
+    try {
+      final events = await _legistar.fetchUpcomingEvents();
+      if (!mounted) return;
+      setState(() {
+        _liveEvents = events;
+        _loading = false;
+      });
+    } catch (e) {
+      debugPrint('Legistar fetch failed: $e');
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _loadError = "Couldn't load council meetings. Showing sample events.";
+      });
+    }
+  }
+
   final Set<String> _saved = {}; // event ids, so bookmarks survive filter changes
 
   // Created once so rebuilds (filter taps) don't restart the Firestore listener.
@@ -67,6 +108,8 @@ class _FeedPageState extends State<FeedPage> {
 
   @override
   Widget build(BuildContext context) {
+    final visible = _visible;
+
     final prefs = PreferencesStore.instance.prefs;
     final chips = <({String? id, String label})>[
       if (prefs.hasInterests) (id: _forYouId, label: 'For you'),
@@ -105,15 +148,26 @@ class _FeedPageState extends State<FeedPage> {
                             children: [
                               Text(
                                 prefs.locationLabel.toUpperCase(),
-                                style: GoogleFonts.outfit(fontSize: 10, fontWeight: FontWeight.w600, letterSpacing: 1.4, color: AppColors.amber),
+                                style: GoogleFonts.outfit(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w600,
+                                letterSpacing: 1.4,
+                                color: AppColors.amber),
                               ),
                               const SizedBox(height: 4),
                               RichText(
                                 text: TextSpan(
-                                  style: GoogleFonts.fraunces(fontSize: 24, fontWeight: FontWeight.w300, color: AppColors.ink),
+                                  style: GoogleFonts.fraunces(
+                                  fontSize: 24,
+                                  fontWeight: FontWeight.w300,
+                                  color: AppColors.ink),
                                   children: const [
                                     TextSpan(text: "What's happening "),
-                                    TextSpan(text: 'near you', style: TextStyle(fontStyle: FontStyle.italic, fontWeight: FontWeight.w400)),
+                                    TextSpan(
+                                    text: 'near you',
+                                    style: TextStyle(
+                                        fontStyle: FontStyle.italic,
+                                        fontWeight: FontWeight.w400)),
                                   ],
                                 ),
                               ),
@@ -128,7 +182,8 @@ class _FeedPageState extends State<FeedPage> {
                             borderRadius: BorderRadius.circular(12),
                             border: Border.all(color: AppColors.border),
                           ),
-                          child: Icon(Icons.search, size: 18, color: AppColors.inkMid),
+                          child:
+                          Icon(Icons.search, size: 18, color: AppColors.inkMid),
                         ),
                       ],
                     ),
@@ -141,22 +196,28 @@ class _FeedPageState extends State<FeedPage> {
                     color: AppColors.canvas,
                     child: ListView.separated(
                       scrollDirection: Axis.horizontal,
-                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                      padding:
+                      const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
                       itemCount: chips.length,
                       separatorBuilder: (_, __) => const SizedBox(width: 8),
                       itemBuilder: (context, i) {
-                        final String? chipId = chips[i].id;
-                        final String chipLabel = chips[i].label;
+                        final String? chipId =
+                        chips[i].id;
+                        final String chipLabel =
+                        chips[i].label;
                         final isActive = _activeCategoryId == chipId;
                         return GestureDetector(
                           onTap: () => setState(() => _activeCategoryId = chipId),
                           child: AnimatedContainer(
                             duration: const Duration(milliseconds: 150),
-                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                            padding: const EdgeInsets.symmetric(
+                            horizontal: 14, vertical: 6),
                             decoration: BoxDecoration(
                               color: isActive ? AppColors.forest : AppColors.ground,
                               borderRadius: BorderRadius.circular(20),
-                              border: isActive ? null : Border.all(color: AppColors.border),
+                              border: isActive
+                              ? null
+                              : Border.all(color: AppColors.border),
                             ),
                             child: Text(
                               chipLabel,
@@ -172,7 +233,18 @@ class _FeedPageState extends State<FeedPage> {
                     ),
                   ),
                 ),
+          ),
+          if (_loading || _loadError != null)
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+                child: _loading
+                    ? const LinearProgressIndicator(minHeight: 2)
+                    : Text(_loadError!,
+                        style: GoogleFonts.outfit(
+                            fontSize: 11, color: AppColors.inkMuted)),
               ),
+                ),
 
               // Error → loading → empty → list
               if (snap.hasError)
@@ -205,7 +277,9 @@ class _FeedPageState extends State<FeedPage> {
                             event: event,
                             isSaved: isSaved,
                             onSave: () => setState(
-                              () => isSaved ? _saved.remove(event.id) : _saved.add(event.id),
+                              () => isSaved
+                            ? _saved.remove(event.id)
+                            : _saved.add(event.id),
                             ),
                           ),
                         );
@@ -268,7 +342,6 @@ class _EventCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final category = event.category;
-    final where = event.distanceLabel ?? event.location;
 
     return Container(
       decoration: BoxDecoration(
@@ -284,16 +357,23 @@ class _EventCard extends StatelessWidget {
             Row(
               children: [
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                   decoration: BoxDecoration(
                     color: category.lightColor,
                     borderRadius: BorderRadius.circular(20),
                   ),
-                  child: Text(category.shortLabel, style: GoogleFonts.outfit(fontSize: 11, fontWeight: FontWeight.w600, color: category.color)),
+                  child: Text(category.shortLabel,
+                      style: GoogleFonts.outfit(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: category.color)),
                 ),
                 const Spacer(),
                 if (event.spots != null)
-                  Text('${event.spots} spots left', style: GoogleFonts.outfit(fontSize: 11, color: AppColors.inkMuted)),
+                  Text('${event.spots} spots left',
+                      style: GoogleFonts.outfit(
+                          fontSize: 11, color: AppColors.inkMuted)),
                 const SizedBox(width: 10),
                 GestureDetector(
                   onTap: onSave,
@@ -306,18 +386,44 @@ class _EventCard extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 12),
-            Text(event.title, style: GoogleFonts.outfit(fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.ink)),
+            Text(event.title,
+                style: GoogleFonts.outfit(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.ink)),
             if (event.org.isNotEmpty) ...[
               const SizedBox(height: 3),
-              Text(event.org, style: GoogleFonts.outfit(fontSize: 11, color: AppColors.inkMuted)),
+              Text(event.org,
+                style: GoogleFonts.outfit(
+                    fontSize: 11, color: AppColors.inkMuted)),
             ],
             if (event.description.isNotEmpty) ...[
               const SizedBox(height: 8),
-              Text(event.description, style: GoogleFonts.outfit(fontSize: 12, color: AppColors.inkMid, height: 1.5)),
+              Text(event.description,
+                style: GoogleFonts.outfit(
+                    fontSize: 12, color: AppColors.inkMid, height: 1.5)),
             ],
             const SizedBox(height: 14),
             Row(
               children: [
+                Icon(Icons.calendar_today_outlined,
+                    size: 12, color: AppColors.inkMuted),
+                const SizedBox(width: 4),
+                Text(event.date,
+                    style: GoogleFonts.outfit(
+                        fontSize: 11, color: AppColors.inkMuted)),
+                const SizedBox(width: 12),
+                Icon(Icons.location_on_outlined,
+                    size: 12, color: AppColors.inkMuted),
+                const SizedBox(width: 4),
+                Expanded(
+                  child: Text(event.distance ?? event.location ?? '',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.outfit(
+                          fontSize: 11, color: AppColors.inkMuted)),
+                ),
+                const SizedBox(width: 8),
                 Expanded(
                   child: Row(
                     children: [
@@ -350,12 +456,16 @@ class _EventCard extends StatelessWidget {
                   onPressed: () {},
                   style: ElevatedButton.styleFrom(
                     backgroundColor: category.color,
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                     minimumSize: Size.zero,
                     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12)),
                   ),
-                  child: Text(event.action, style: GoogleFonts.outfit(fontSize: 11, fontWeight: FontWeight.w600)),
+                  child: Text(event.action,
+                      style: GoogleFonts.outfit(
+                          fontSize: 11, fontWeight: FontWeight.w600)),
                 ),
               ],
             ),
@@ -365,3 +475,4 @@ class _EventCard extends StatelessWidget {
     );
   }
 }
+
