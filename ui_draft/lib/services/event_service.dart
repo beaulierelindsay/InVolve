@@ -1,7 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import '../models/category.dart';
-import '../models/event.dart';
+import '../models/events.dart';
 
 /// Reads events from the Firestore `events` collection and converts each
 /// document into a typed [Event].
@@ -52,9 +52,9 @@ class EventService {
     }
 
     final startsAt = _asDateTime(d['startsAt'] ?? d['date']);
-    final dateLabel = d['date'] is String
+    final date = d['date'] is String
         ? d['date'] as String
-        : (startsAt != null ? formatEventDate(startsAt) : '');
+        : (startsAt != null ? formatEventDate(startsAt, hasTime: true) : '');
 
     final title = d['title']?.toString() ?? '';
 
@@ -63,7 +63,7 @@ class EventService {
       categoryId: categoryId,
       title: title.isEmpty ? 'Untitled event' : title,
       org: d['org']?.toString() ?? '',
-      dateLabel: dateLabel,
+      date: date,
       startsAt: startsAt,
       location: d['location']?.toString() ?? '',
       description: d['description']?.toString() ?? '',

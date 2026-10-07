@@ -5,12 +5,15 @@ import '../app_theme.dart';
 import '../models/category.dart';
 import '../models/events.dart';
 import '../services/event_service.dart';
+import '../services/legistar_service.dart';
 import '../services/mock_events.dart';
 import '../services/preferences_store.dart';
-import '../services/legistar_service.dart';
 
-/// Flip to true to develop against placeholder data (no Firestore needed).
+/// Flip to true to develop against placeholder data instead of Firestore.
 const bool _useMockEvents = false;
+
+/// Flip to false to skip the Legistar network call (e.g. offline dev).
+const bool _useLegistar = true;
 
 // Sentinel for the personalized chip. null means "All".
 const _forYouId = '__for_you__';
@@ -18,58 +21,25 @@ const _forYouId = '__for_you__';
 class FeedPage extends StatefulWidget {
   const FeedPage({super.key});
 
-
   @override
   State<FeedPage> createState() => _FeedPageState();
 }
 
-
 class _FeedPageState extends State<FeedPage> {
   // null = "All"; _forYouId = interests; otherwise an EngagementCategory.id
   String? _activeCategoryId;
-  final Set<String> _saved =
-      {}; // event ids, so bookmarks survive filter changes
-
-  final _legistar = LegistarService();
-  List<Event> _liveEvents = [];
-  bool _loading = true;
-  String? _loadError;
-
-  List<Event> get _events => [..._liveEvents, ..._mockEvents];
-
-  List<Event> get _visible => _activeCategoryId == null
-      ? _events
-      : _events.where((e) => e.categoryId == _activeCategoryId).toList();
-
-  @override
-  void initState() {
-    super.initState();
-    _loadLiveEvents();
-  }
-
-  Future<void> _loadLiveEvents() async {
-    try {
-      final events = await _legistar.fetchUpcomingEvents();
-      if (!mounted) return;
-      setState(() {
-        _liveEvents = events;
-        _loading = false;
-      });
-    } catch (e) {
-      debugPrint('Legistar fetch failed: $e');
-      if (!mounted) return;
-      setState(() {
-        _loading = false;
-        _loadError = "Couldn't load council meetings. Showing sample events.";
-      });
-    }
-  }
-
   final Set<String> _saved = {}; // event ids, so bookmarks survive filter changes
 
   // Created once so rebuilds (filter taps) don't restart the Firestore listener.
   late final Stream<List<Event>> _eventsStream =
       _useMockEvents ? Stream.value(kMockEvents) : EventService().watchEvents();
+
+  // Legistar council meetings load separately (one-time fetch) and are merged
+  // with the Firestore/mock events at build time.
+  final _legistar = LegistarService();
+  List<Event> _liveEvents = [];
+  bool _legistarLoading = _useLegistar;
+  String? _legistarError;
 
   @override
   void initState() {
@@ -78,6 +48,25 @@ class _FeedPageState extends State<FeedPage> {
     _activeCategoryId =
         PreferencesStore.instance.prefs.hasInterests ? _forYouId : null;
     PreferencesStore.instance.addListener(_onPrefsChanged);
+    if (_useLegistar) _loadLiveEvents();
+  }
+
+  Future<void> _loadLiveEvents() async {
+    try {
+      final events = await _legistar.fetchUpcomingEvents();
+      if (!mounted) return;
+      setState(() {
+        _liveEvents = events;
+        _legistarLoading = false;
+      });
+    } catch (e) {
+      debugPrint('Legistar fetch failed: $e');
+      if (!mounted) return;
+      setState(() {
+        _legistarLoading = false;
+        _legistarError = "Couldn't load council meetings.";
+      });
+    }
   }
 
   void _onPrefsChanged() {
@@ -97,6 +86,19 @@ class _FeedPageState extends State<FeedPage> {
     super.dispose();
   }
 
+  /// Combines both sources, soonest first; events without a date go last.
+  List<Event> _merge(List<Event> base, List<Event> live) {
+    final all = [...live, ...base];
+    all.sort((a, b) {
+      final x = a.startsAt, y = b.startsAt;
+      if (x == null && y == null) return 0;
+      if (x == null) return 1;
+      if (y == null) return -1;
+      return x.compareTo(y);
+    });
+    return all;
+  }
+
   List<Event> _filter(List<Event> events) {
     if (_activeCategoryId == null) return events;
     if (_activeCategoryId == _forYouId) {
@@ -108,8 +110,6 @@ class _FeedPageState extends State<FeedPage> {
 
   @override
   Widget build(BuildContext context) {
-    final visible = _visible;
-
     final prefs = PreferencesStore.instance.prefs;
     final chips = <({String? id, String label})>[
       if (prefs.hasInterests) (id: _forYouId, label: 'For you'),
@@ -122,7 +122,16 @@ class _FeedPageState extends State<FeedPage> {
       body: StreamBuilder<List<Event>>(
         stream: _eventsStream,
         builder: (context, snap) {
-          final visible = snap.hasData ? _filter(snap.data!) : const <Event>[];
+          final all = _merge(snap.data ?? const <Event>[], _liveEvents);
+          final visible = _filter(all);
+
+          final stillLoading =
+              (!snap.hasData && !snap.hasError) || _legistarLoading;
+          // Small inline notice when one source failed but we still have events.
+          final notice = _legistarError ??
+              (snap.hasError && all.isNotEmpty
+                  ? "Couldn't load community events."
+                  : null);
 
           return CustomScrollView(
             slivers: [
@@ -148,26 +157,15 @@ class _FeedPageState extends State<FeedPage> {
                             children: [
                               Text(
                                 prefs.locationLabel.toUpperCase(),
-                                style: GoogleFonts.outfit(
-                                fontSize: 10,
-                                fontWeight: FontWeight.w600,
-                                letterSpacing: 1.4,
-                                color: AppColors.amber),
+                                style: GoogleFonts.outfit(fontSize: 10, fontWeight: FontWeight.w600, letterSpacing: 1.4, color: AppColors.amber),
                               ),
                               const SizedBox(height: 4),
                               RichText(
                                 text: TextSpan(
-                                  style: GoogleFonts.fraunces(
-                                  fontSize: 24,
-                                  fontWeight: FontWeight.w300,
-                                  color: AppColors.ink),
+                                  style: GoogleFonts.fraunces(fontSize: 24, fontWeight: FontWeight.w300, color: AppColors.ink),
                                   children: const [
                                     TextSpan(text: "What's happening "),
-                                    TextSpan(
-                                    text: 'near you',
-                                    style: TextStyle(
-                                        fontStyle: FontStyle.italic,
-                                        fontWeight: FontWeight.w400)),
+                                    TextSpan(text: 'near you', style: TextStyle(fontStyle: FontStyle.italic, fontWeight: FontWeight.w400)),
                                   ],
                                 ),
                               ),
@@ -182,8 +180,7 @@ class _FeedPageState extends State<FeedPage> {
                             borderRadius: BorderRadius.circular(12),
                             border: Border.all(color: AppColors.border),
                           ),
-                          child:
-                          Icon(Icons.search, size: 18, color: AppColors.inkMid),
+                          child: Icon(Icons.search, size: 18, color: AppColors.inkMid),
                         ),
                       ],
                     ),
@@ -196,28 +193,22 @@ class _FeedPageState extends State<FeedPage> {
                     color: AppColors.canvas,
                     child: ListView.separated(
                       scrollDirection: Axis.horizontal,
-                      padding:
-                      const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
                       itemCount: chips.length,
                       separatorBuilder: (_, __) => const SizedBox(width: 8),
                       itemBuilder: (context, i) {
-                        final String? chipId =
-                        chips[i].id;
-                        final String chipLabel =
-                        chips[i].label;
+                        final String? chipId = chips[i].id;
+                        final String chipLabel = chips[i].label;
                         final isActive = _activeCategoryId == chipId;
                         return GestureDetector(
                           onTap: () => setState(() => _activeCategoryId = chipId),
                           child: AnimatedContainer(
                             duration: const Duration(milliseconds: 150),
-                            padding: const EdgeInsets.symmetric(
-                            horizontal: 14, vertical: 6),
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
                             decoration: BoxDecoration(
                               color: isActive ? AppColors.forest : AppColors.ground,
                               borderRadius: BorderRadius.circular(20),
-                              border: isActive
-                              ? null
-                              : Border.all(color: AppColors.border),
+                              border: isActive ? null : Border.all(color: AppColors.border),
                             ),
                             child: Text(
                               chipLabel,
@@ -233,29 +224,29 @@ class _FeedPageState extends State<FeedPage> {
                     ),
                   ),
                 ),
-          ),
-          if (_loading || _loadError != null)
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
-                child: _loading
-                    ? const LinearProgressIndicator(minHeight: 2)
-                    : Text(_loadError!,
-                        style: GoogleFonts.outfit(
-                            fontSize: 11, color: AppColors.inkMuted)),
               ),
+
+              // Legistar progress bar / partial-failure notice
+              if (_legistarLoading || notice != null)
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+                    child: _legistarLoading
+                        ? const LinearProgressIndicator(minHeight: 2)
+                        : Text(notice!, style: GoogleFonts.outfit(fontSize: 11, color: AppColors.inkMuted)),
+                  ),
                 ),
 
-              // Error → loading → empty → list
-              if (snap.hasError)
-                _MessageSliver(
-                  message: "Couldn't load events. Check your connection and try again.",
-                  detail: kDebugMode ? '${snap.error}' : null,
-                )
-              else if (!snap.hasData)
+              // Loading → error → empty → list
+              if (all.isEmpty && stillLoading)
                 SliverFillRemaining(
                   hasScrollBody: false,
                   child: Center(child: CircularProgressIndicator(color: AppColors.forest)),
+                )
+              else if (all.isEmpty && snap.hasError)
+                _MessageSliver(
+                  message: "Couldn't load events. Check your connection and try again.",
+                  detail: kDebugMode ? '${snap.error}' : null,
                 )
               else if (visible.isEmpty)
                 _MessageSliver(
@@ -277,9 +268,7 @@ class _FeedPageState extends State<FeedPage> {
                             event: event,
                             isSaved: isSaved,
                             onSave: () => setState(
-                              () => isSaved
-                            ? _saved.remove(event.id)
-                            : _saved.add(event.id),
+                              () => isSaved ? _saved.remove(event.id) : _saved.add(event.id),
                             ),
                           ),
                         );
@@ -342,6 +331,7 @@ class _EventCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final category = event.category;
+    final String where = event.distance ?? event.location ?? '';
 
     return Container(
       decoration: BoxDecoration(
@@ -357,23 +347,16 @@ class _EventCard extends StatelessWidget {
             Row(
               children: [
                 Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                   decoration: BoxDecoration(
                     color: category.lightColor,
                     borderRadius: BorderRadius.circular(20),
                   ),
-                  child: Text(category.shortLabel,
-                      style: GoogleFonts.outfit(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                          color: category.color)),
+                  child: Text(category.shortLabel, style: GoogleFonts.outfit(fontSize: 11, fontWeight: FontWeight.w600, color: category.color)),
                 ),
                 const Spacer(),
                 if (event.spots != null)
-                  Text('${event.spots} spots left',
-                      style: GoogleFonts.outfit(
-                          fontSize: 11, color: AppColors.inkMuted)),
+                  Text('${event.spots} spots left', style: GoogleFonts.outfit(fontSize: 11, color: AppColors.inkMuted)),
                 const SizedBox(width: 10),
                 GestureDetector(
                   onTap: onSave,
@@ -386,52 +369,26 @@ class _EventCard extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 12),
-            Text(event.title,
-                style: GoogleFonts.outfit(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.ink)),
+            Text(event.title, style: GoogleFonts.outfit(fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.ink)),
             if (event.org.isNotEmpty) ...[
               const SizedBox(height: 3),
-              Text(event.org,
-                style: GoogleFonts.outfit(
-                    fontSize: 11, color: AppColors.inkMuted)),
+              Text(event.org, style: GoogleFonts.outfit(fontSize: 11, color: AppColors.inkMuted)),
             ],
             if (event.description.isNotEmpty) ...[
               const SizedBox(height: 8),
-              Text(event.description,
-                style: GoogleFonts.outfit(
-                    fontSize: 12, color: AppColors.inkMid, height: 1.5)),
+              Text(event.description, style: GoogleFonts.outfit(fontSize: 12, color: AppColors.inkMid, height: 1.5)),
             ],
             const SizedBox(height: 14),
             Row(
               children: [
-                Icon(Icons.calendar_today_outlined,
-                    size: 12, color: AppColors.inkMuted),
-                const SizedBox(width: 4),
-                Text(event.date,
-                    style: GoogleFonts.outfit(
-                        fontSize: 11, color: AppColors.inkMuted)),
-                const SizedBox(width: 12),
-                Icon(Icons.location_on_outlined,
-                    size: 12, color: AppColors.inkMuted),
-                const SizedBox(width: 4),
-                Expanded(
-                  child: Text(event.distance ?? event.location ?? '',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: GoogleFonts.outfit(
-                          fontSize: 11, color: AppColors.inkMuted)),
-                ),
-                const SizedBox(width: 8),
                 Expanded(
                   child: Row(
                     children: [
-                      if (event.dateLabel.isNotEmpty) ...[
+                      if (event.date.isNotEmpty) ...[
                         Icon(Icons.calendar_today_outlined, size: 12, color: AppColors.inkMuted),
                         const SizedBox(width: 4),
                         Flexible(
-                          child: Text(event.dateLabel,
+                          child: Text(event.date,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: GoogleFonts.outfit(fontSize: 11, color: AppColors.inkMuted)),
@@ -456,16 +413,12 @@ class _EventCard extends StatelessWidget {
                   onPressed: () {},
                   style: ElevatedButton.styleFrom(
                     backgroundColor: category.color,
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                     minimumSize: Size.zero,
                     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12)),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                   ),
-                  child: Text(event.action,
-                      style: GoogleFonts.outfit(
-                          fontSize: 11, fontWeight: FontWeight.w600)),
+                  child: Text(event.action, style: GoogleFonts.outfit(fontSize: 11, fontWeight: FontWeight.w600)),
                 ),
               ],
             ),
@@ -475,4 +428,3 @@ class _EventCard extends StatelessWidget {
     );
   }
 }
-

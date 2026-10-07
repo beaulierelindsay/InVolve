@@ -32,6 +32,20 @@ class Event {
   // Display info comes from the category model, never duplicated on the event.
   EngagementCategory get category => categoryById(categoryId);
 
+  /// Sensible button text when a Firestore document doesn't specify one.
+  static String defaultActionFor(String categoryId) {
+    switch (categoryId) {
+      case CategoryIds.civic:
+        return 'Add to calendar';
+      case CategoryIds.directService:
+        return 'Sign up';
+      case CategoryIds.causeAction:
+        return 'Join session';
+      default:
+        return 'RSVP';
+    }
+  }
+
   /// Maps one item from Legistar's `/v1/{client}/events` endpoint.
   /// Legistar "events" are public meetings and hearings of a legislative body.
   factory Event.fromLegistar(Map<String, dynamic> json, {required String org}) {
@@ -46,7 +60,7 @@ class Event {
       categoryId: CategoryIds.civic,
       title: body,
       org: org,
-      date: _formatDate(startsAt, hasTime: time != null),
+      date: formatEventDate(startsAt, hasTime: time != null),
       startsAt: startsAt,
       location: json['EventLocation'] as String?,
       action: 'View agenda',
@@ -74,7 +88,7 @@ const _months = [
   'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
 ];
 
-String _formatDate(DateTime d, {required bool hasTime}) {
+String formatEventDate(DateTime d, {required bool hasTime}) {
   final day = '${_weekdays[d.weekday - 1]}, ${_months[d.month - 1]} ${d.day}';
   if (!hasTime) return day;
   final hour = d.hour % 12 == 0 ? 12 : d.hour % 12;
