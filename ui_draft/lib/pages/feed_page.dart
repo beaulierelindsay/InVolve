@@ -8,6 +8,8 @@ import '../services/event_service.dart';
 import '../services/legistar_service.dart';
 import '../services/mock_events.dart';
 import '../services/preferences_store.dart';
+import '../widgets/save_button.dart';
+import 'package:go_router/go_router.dart';
 
 /// Flip to true to develop against placeholder data instead of Firestore.
 const bool _useMockEvents = false;
@@ -28,7 +30,6 @@ class FeedPage extends StatefulWidget {
 class _FeedPageState extends State<FeedPage> {
   // null = "All"; _forYouId = interests; otherwise an EngagementCategory.id
   String? _activeCategoryId;
-  final Set<String> _saved = {}; // event ids, so bookmarks survive filter changes
 
   // Created once so rebuilds (filter taps) don't restart the Firestore listener.
   late final Stream<List<Event>> _eventsStream =
@@ -261,16 +262,9 @@ class _FeedPageState extends State<FeedPage> {
                     delegate: SliverChildBuilderDelegate(
                       (context, i) {
                         final event = visible[i];
-                        final isSaved = _saved.contains(event.id);
                         return Padding(
                           padding: const EdgeInsets.only(bottom: 12),
-                          child: _EventCard(
-                            event: event,
-                            isSaved: isSaved,
-                            onSave: () => setState(
-                              () => isSaved ? _saved.remove(event.id) : _saved.add(event.id),
-                            ),
-                          ),
+                          child: _EventCard(event: event),
                         );
                       },
                       childCount: visible.length,
@@ -323,10 +317,8 @@ class _MessageSliver extends StatelessWidget {
 
 class _EventCard extends StatelessWidget {
   final Event event;
-  final bool isSaved;
-  final VoidCallback onSave;
 
-  const _EventCard({required this.event, required this.isSaved, required this.onSave});
+  const _EventCard({required this.event});
 
   @override
   Widget build(BuildContext context) {
@@ -358,14 +350,7 @@ class _EventCard extends StatelessWidget {
                 if (event.spots != null)
                   Text('${event.spots} spots left', style: GoogleFonts.outfit(fontSize: 11, color: AppColors.inkMuted)),
                 const SizedBox(width: 10),
-                GestureDetector(
-                  onTap: onSave,
-                  child: Icon(
-                    isSaved ? Icons.bookmark : Icons.bookmark_outline,
-                    size: 20,
-                    color: isSaved ? category.color : AppColors.inkMuted,
-                  ),
-                ),
+                SaveButton(event: event),
               ],
             ),
             const SizedBox(height: 12),
@@ -410,7 +395,10 @@ class _EventCard extends StatelessWidget {
                 ),
                 const SizedBox(width: 8),
                 ElevatedButton(
-                  onPressed: () {},
+                  onPressed: () {
+                  debugPrint('Opening details for ${event.id}');
+                  context.push('/feed/event', extra: event);
+                },
                   style: ElevatedButton.styleFrom(
                     backgroundColor: category.color,
                     padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),

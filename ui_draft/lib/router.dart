@@ -10,6 +10,8 @@ import 'pages/volunteer_page.dart';
 import 'pages/saved_page.dart';
 import 'pages/profile_page.dart';
 import 'pages/wireframes_page.dart';
+import 'pages/event_details_page.dart';
+import 'models/events.dart';
 
 final _shellNavigatorKey = GlobalKey<NavigatorState>();
 
@@ -34,7 +36,19 @@ final router = GoRouter(
       navigatorKey: _shellNavigatorKey,
       builder: (context, state, child) => MainShell(child: child),
       routes: [
-        GoRoute(path: '/feed', builder: (context, state) => const FeedPage()),
+        GoRoute(
+          path: '/feed',
+          builder: (context, state) => const FeedPage(),
+          routes: [
+            // Event details: context.push('/feed/event', extra: event)
+            GoRoute(
+              path: 'event',
+              builder: (context, state) => EventDetailsPage(
+                event: state.extra is Event ? state.extra as Event : null,
+              ),
+            ),
+          ],
+        ),
         GoRoute(path: '/explore', builder: (context, state) => const ExplorePage()),
         GoRoute(path: '/volunteer', builder: (context, state) => const VolunteerPage()),
         GoRoute(path: '/saved', builder: (context, state) => const SavedPage()),
