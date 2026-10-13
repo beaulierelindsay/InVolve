@@ -66,10 +66,22 @@ class EventService {
       date: date,
       startsAt: startsAt,
       location: d['location']?.toString() ?? '',
+      url: _asUrl(d['url']),
       description: d['description']?.toString() ?? '',
       action: d['action']?.toString() ?? Event.defaultActionFor(categoryId),
       spots: d['spots'] is num ? (d['spots'] as num).toInt() : null,
     );
+  }
+
+  /// Accepts only real web links, so a bad value in Firestore can't break
+  /// the "Continue on official site" button.
+  String? _asUrl(Object? value) {
+    var s = value?.toString().trim() ?? '';
+    if (s.isEmpty) return null;
+    if (!s.contains('://')) s = 'https://$s'; // tolerate "www.example.org/page"
+    final uri = Uri.tryParse(s);
+    final ok = uri != null && uri.hasAuthority && (uri.scheme == 'http' || uri.scheme == 'https');
+    return ok ? s : null;
   }
 
   DateTime? _asDateTime(Object? value) {
