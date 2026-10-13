@@ -1,0 +1,45 @@
+name: Sync events
+
+on:
+  schedule:
+    - cron: '0 */6 * * *' # every 6 hours (UTC). Scheduled runs only fire from the default branch.
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run: fetch and normalize, write nothing'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sync-events
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: pipeline
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: pipeline/package-lock.json
+
+      - run: npm ci
+
+      - run: npm test
+
+      - name: Sync events to Firestore
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          LEGISTAR_TOKEN: ${{ secrets.LEGISTAR_TOKEN }}
+          DRY_RUN: ${{ inputs.dry_run && '--dry-run' || '' }}
+        run: node src/index.js $DRY_RUN

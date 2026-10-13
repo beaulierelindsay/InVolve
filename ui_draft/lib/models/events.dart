@@ -45,41 +45,6 @@ class Event {
         return 'RSVP';
     }
   }
-
-  /// Maps one item from Legistar's `/v1/{client}/events` endpoint.
-  /// Legistar "events" are public meetings and hearings of a legislative body.
-  factory Event.fromLegistar(Map<String, dynamic> json, {required String org}) {
-    final day = DateTime.parse(json['EventDate'] as String);
-    final time = json['EventTime'] as String?;
-    final startsAt = _combine(day, time);
-    final comment = (json['EventComment'] as String?)?.trim();
-    final body = json['EventBodyName'] as String? ?? 'Public meeting';
-
-    return Event(
-      id: 'legistar-${json['EventId']}',
-      categoryId: CategoryIds.civic,
-      title: body,
-      org: org,
-      date: formatEventDate(startsAt, hasTime: time != null),
-      startsAt: startsAt,
-      location: json['EventLocation'] as String?,
-      action: 'View agenda',
-      description: comment == null || comment.isEmpty
-          ? 'Public meeting of the $body. Open to the public.'
-          : comment,
-      url: json['EventInSiteURL'] as String?,
-    );
-  }
-}
-
-/// Legistar sends the date and a separate "h:mm AM" string.
-DateTime _combine(DateTime day, String? time) {
-  final match = RegExp(r'^(\d{1,2}):(\d{2})\s*([AP]M)$', caseSensitive: false)
-      .firstMatch(time?.trim() ?? '');
-  if (match == null) return day;
-  var hour = int.parse(match[1]!) % 12;
-  if (match[3]!.toUpperCase() == 'PM') hour += 12;
-  return DateTime(day.year, day.month, day.day, hour, int.parse(match[2]!));
 }
 
 const _weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
