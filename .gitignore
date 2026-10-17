@@ -1,0 +1,13 @@
+# Pipeline
+pipeline/node_modules/
+.env
+.env.*
+!.env.example
+
+# Credentials: never commit these
+*service-account*.json
+*serviceAccount*.json
+*-firebase-adminsdk-*.json
+legistar.json
+
+.DS_Store

@@ -5,7 +5,6 @@ import '../app_theme.dart';
 import '../models/category.dart';
 import '../models/events.dart';
 import '../services/event_service.dart';
-import '../services/legistar_service.dart';
 import '../services/mock_events.dart';
 import '../services/preferences_store.dart';
 import '../widgets/save_button.dart';
@@ -13,9 +12,6 @@ import 'package:go_router/go_router.dart';
 
 /// Flip to true to develop against placeholder data instead of Firestore.
 const bool _useMockEvents = false;
-
-/// Flip to false to skip the Legistar network call (e.g. offline dev).
-const bool _useLegistar = true;
 
 // Sentinel for the personalized chip. null means "All".
 const _forYouId = '__for_you__';
@@ -35,13 +31,6 @@ class _FeedPageState extends State<FeedPage> {
   late final Stream<List<Event>> _eventsStream =
       _useMockEvents ? Stream.value(kMockEvents) : EventService().watchEvents();
 
-  // Legistar council meetings load separately (one-time fetch) and are merged
-  // with the Firestore/mock events at build time.
-  final _legistar = LegistarService();
-  List<Event> _liveEvents = [];
-  bool _legistarLoading = _useLegistar;
-  String? _legistarError;
-
   @override
   void initState() {
     super.initState();
@@ -49,25 +38,6 @@ class _FeedPageState extends State<FeedPage> {
     _activeCategoryId =
         PreferencesStore.instance.prefs.hasInterests ? _forYouId : null;
     PreferencesStore.instance.addListener(_onPrefsChanged);
-    if (_useLegistar) _loadLiveEvents();
-  }
-
-  Future<void> _loadLiveEvents() async {
-    try {
-      final events = await _legistar.fetchUpcomingEvents();
-      if (!mounted) return;
-      setState(() {
-        _liveEvents = events;
-        _legistarLoading = false;
-      });
-    } catch (e) {
-      debugPrint('Legistar fetch failed: $e');
-      if (!mounted) return;
-      setState(() {
-        _legistarLoading = false;
-        _legistarError = "Couldn't load council meetings.";
-      });
-    }
   }
 
   void _onPrefsChanged() {
@@ -85,19 +55,6 @@ class _FeedPageState extends State<FeedPage> {
   void dispose() {
     PreferencesStore.instance.removeListener(_onPrefsChanged);
     super.dispose();
-  }
-
-  /// Combines both sources, soonest first; events without a date go last.
-  List<Event> _merge(List<Event> base, List<Event> live) {
-    final all = [...live, ...base];
-    all.sort((a, b) {
-      final x = a.startsAt, y = b.startsAt;
-      if (x == null && y == null) return 0;
-      if (x == null) return 1;
-      if (y == null) return -1;
-      return x.compareTo(y);
-    });
-    return all;
   }
 
   List<Event> _filter(List<Event> events) {
@@ -123,16 +80,14 @@ class _FeedPageState extends State<FeedPage> {
       body: StreamBuilder<List<Event>>(
         stream: _eventsStream,
         builder: (context, snap) {
-          final all = _merge(snap.data ?? const <Event>[], _liveEvents);
+          final all = snap.data ?? const <Event>[];
           final visible = _filter(all);
 
-          final stillLoading =
-              (!snap.hasData && !snap.hasError) || _legistarLoading;
-          // Small inline notice when one source failed but we still have events.
-          final notice = _legistarError ??
-              (snap.hasError && all.isNotEmpty
-                  ? "Couldn't load community events."
-                  : null);
+          final stillLoading = !snap.hasData && !snap.hasError;
+          // Small inline notice when the stream errored but we still have events.
+          final notice = snap.hasError && all.isNotEmpty
+              ? "Couldn't load community events."
+              : null;
 
           return CustomScrollView(
             slivers: [
@@ -227,14 +182,12 @@ class _FeedPageState extends State<FeedPage> {
                 ),
               ),
 
-              // Legistar progress bar / partial-failure notice
-              if (_legistarLoading || notice != null)
+              // Partial-failure notice
+              if (notice != null)
                 SliverToBoxAdapter(
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
-                    child: _legistarLoading
-                        ? const LinearProgressIndicator(minHeight: 2)
-                        : Text(notice!, style: GoogleFonts.outfit(fontSize: 11, color: AppColors.inkMuted)),
+                    child: Text(notice, style: GoogleFonts.outfit(fontSize: 11, color: AppColors.inkMuted)),
                   ),
                 ),
 
