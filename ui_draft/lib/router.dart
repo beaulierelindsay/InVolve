@@ -6,12 +6,13 @@ import 'pages/interests_page.dart';
 import 'pages/main_shell.dart';
 import 'pages/feed_page.dart';
 import 'pages/explore_page.dart';
-import 'pages/volunteer_page.dart';
+import 'pages/create_event_page.dart';
 import 'pages/saved_page.dart';
 import 'pages/profile_page.dart';
 import 'pages/wireframes_page.dart';
 import 'pages/event_details_page.dart';
 import 'models/events.dart';
+import 'pages/sign_in_page.dart';
 
 final _shellNavigatorKey = GlobalKey<NavigatorState>();
 
@@ -50,7 +51,8 @@ final router = GoRouter(
           ],
         ),
         GoRoute(path: '/explore', builder: (context, state) => const ExplorePage()),
-        GoRoute(path: '/volunteer', builder: (context, state) => const VolunteerPage()),
+        GoRoute(path: '/create', builder: (context, state) => const CreateEventPage()),
+        GoRoute(path: '/signin', builder: (context, state) => const SignInPage()),
         GoRoute(path: '/saved', builder: (context, state) => const SavedPage()),
         GoRoute(path: '/profile', builder: (context, state) => const ProfilePage()),
       ],

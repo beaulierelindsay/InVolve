@@ -9,7 +9,7 @@ class MainShell extends StatelessWidget {
   static const _tabs = [
     _TabItem(path: '/feed', label: 'Feed', icon: Icons.grid_view_rounded, activeIcon: Icons.grid_view_rounded),
     _TabItem(path: '/explore', label: 'Explore', icon: Icons.language_outlined, activeIcon: Icons.language),
-    _TabItem(path: '/volunteer', label: 'Volunteer', icon: Icons.favorite_outline, activeIcon: Icons.favorite),
+    _TabItem(path: '/create', label: 'Add', icon: Icons.add_circle_outline, activeIcon: Icons.add_circle),
     _TabItem(path: '/saved', label: 'Saved', icon: Icons.bookmark_outline, activeIcon: Icons.bookmark),
     _TabItem(path: '/profile', label: 'You', icon: Icons.person_outline, activeIcon: Icons.person),
   ];

@@ -234,24 +234,6 @@ void _explore(_Wire w) {
   w.bottomNav();
 }
 
-void _volunteer(_Wire w) {
-  w.header('Volunteer shifts', sub: 'Open near you');
-  const spots = ['4', '2', '18'];
-  for (var i = 0; i < 3; i++) {
-    final c = allCategories[[1, 4, 2][i]]; // sample colors from the category model
-    final y = 74.0 + i * 100;
-    w.rect(16, y, 188, 92, fill: Colors.white, rx: 8, stroke: _strokeLight);
-    w.rect(24, y + 8, 46, 13, fill: c.lightColor, rx: 7);
-    w.text('${spots[i]} spots left', 47, y + 17, size: 6, color: c.color, weight: FontWeight.w600);
-    w.bar(24, y + 26, 130, h: 7);
-    w.bar(24, y + 38, 90);
-    w.bar(24, y + 48, 110);
-    w.rect(24, y + 62, 50, 16, fill: c.color, rx: 5);
-    w.text('Sign up', 49, y + 73, size: 6.5, color: Colors.white, weight: FontWeight.w600);
-  }
-  w.bottomNav();
-}
-
 void _saved(_Wire w) {
   w.header('Saved events', sub: 'Your list');
   w.rect(86, 168, 48, 48, fill: _fill, rx: 10, stroke: _strokeLight);
@@ -312,7 +294,6 @@ final _screens = <_Screen>[
   _Screen('Interests · Step 2', '/interests', _interestsStep2),
   _Screen('Feed', '/feed', _feed),
   _Screen('Explore', '/explore', _explore),
-  _Screen('Volunteer', '/volunteer', _volunteer),
   _Screen('Saved', '/saved', _saved),
   _Screen('Profile', '/profile', _profile),
 ];
