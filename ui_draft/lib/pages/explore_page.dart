@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../app_theme.dart';
+import '../services/preferences_store.dart';
 
 class ExplorePage extends StatelessWidget {
   const ExplorePage({super.key});
@@ -18,7 +19,7 @@ class ExplorePage extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('BROOKLYN, NY',
+                Text(PreferencesStore.instance.prefs.displayLocation.toUpperCase(),
                     style: GoogleFonts.outfit(fontSize: 10, fontWeight: FontWeight.w600, letterSpacing: 1.4, color: AppColors.amber)),
                 const SizedBox(height: 4),
                 RichText(

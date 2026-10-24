@@ -1,7 +1,9 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../app_theme.dart';
+import '../services/auth_service.dart';
 import '../services/preferences_store.dart';
 
 class WelcomePage extends StatefulWidget {
@@ -14,7 +16,6 @@ class WelcomePage extends StatefulWidget {
 class _WelcomePageState extends State<WelcomePage> {
   final _locationController = TextEditingController();
   String _confirmedLocation = PreferencesStore.instance.prefs.locationLabel;
-  bool _locating = false;
   bool _locationSet = false;
 
   String get _greeting {
@@ -22,18 +23,6 @@ class _WelcomePageState extends State<WelcomePage> {
     if (h >= 17) return 'Good evening';
     if (h >= 12) return 'Good afternoon';
     return 'Good morning';
-  }
-
-  void _detectLocation() async {
-    setState(() => _locating = true);
-    await Future.delayed(const Duration(milliseconds: 1400));
-    setState(() {
-      _confirmedLocation = 'Brooklyn, New York';
-      _locationController.text = 'Brooklyn, New York';
-      _locating = false;
-      _locationSet = true;
-    });
-    PreferencesStore.instance.setLocation(_confirmedLocation);
   }
 
   void _confirmLocation() {
@@ -52,8 +41,49 @@ class _WelcomePageState extends State<WelcomePage> {
     super.dispose();
   }
 
+  /// First word of the display name, else the start of the email.
+  String _firstName(User u) {
+    final display = u.displayName?.trim();
+    if (display != null && display.isNotEmpty) return display.split(RegExp(r'\s+')).first;
+    final email = u.email ?? '';
+    final local = email.contains('@') ? email.split('@').first : '';
+    return local.isEmpty ? 'friend' : '${local[0].toUpperCase()}${local.substring(1)}';
+  }
+
+  /// "Welcome," for a brand-new account, "Welcome back," for returning ones.
+  bool _isNewAccount(User u) {
+    final created = u.metadata.creationTime;
+    final last = u.metadata.lastSignInTime;
+    return created != null && last != null && last.difference(created).inMinutes.abs() < 2;
+  }
+
   @override
   Widget build(BuildContext context) {
+    return StreamBuilder<User?>(
+      stream: AuthService.instance.changes,
+      initialData: AuthService.instance.currentUser,
+      builder: (context, snap) {
+        final u = snap.data;
+        // Anonymous sessions count as guests.
+        return _buildPage(context, (u != null && !u.isAnonymous) ? u : null);
+      },
+    );
+  }
+
+  Widget _buildPage(BuildContext context, User? user) {
+    final hasInterests = PreferencesStore.instance.prefs.hasInterests;
+    final signedIn = user != null;
+
+    final intro = !signedIn
+        ? 'Find civic meetings, volunteer work and local events near you. No account needed to browse.'
+        : hasInterests
+            ? "Here's what's happening near you."
+            : "Let's set your neighborhood so we can find what's happening near you.";
+
+    final primaryLabel = signedIn
+        ? (hasInterests ? "See what's happening →" : 'Set my interests →')
+        : 'Continue as guest →';
+
     return Scaffold(
       backgroundColor: AppColors.ground,
       body: SafeArea(
@@ -109,20 +139,67 @@ class _WelcomePageState extends State<WelcomePage> {
                     color: AppColors.ink,
                     height: 1.2,
                   ),
-                  children: const [
-                    TextSpan(text: 'Welcome back,\n'),
+                  children: [
                     TextSpan(
-                      text: 'Jordan.',
-                      style: TextStyle(fontStyle: FontStyle.italic, fontWeight: FontWeight.w400),
+                      text: user == null
+                          ? 'Welcome to\n'
+                          : (_isNewAccount(user) ? 'Welcome,\n' : 'Welcome back,\n'),
+                    ),
+                    TextSpan(
+                      text: user == null ? 'InVolve.' : '${_firstName(user)}.',
+                      style: const TextStyle(fontStyle: FontStyle.italic, fontWeight: FontWeight.w400),
                     ),
                   ],
                 ),
               ),
               const SizedBox(height: 10),
               Text(
-                "Let's set your neighborhood so we can find what's happening near you.",
+                intro,
                 style: GoogleFonts.outfit(fontSize: 14, color: AppColors.inkMid, height: 1.6),
               ),
+
+              // Guests are offered an account; signed-in users skip this.
+              if (!signedIn) ...[
+                const SizedBox(height: 20),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(18),
+                  decoration: BoxDecoration(
+                    color: AppColors.canvas,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: AppColors.border),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'HAVE AN ACCOUNT?',
+                        style: GoogleFonts.outfit(fontSize: 10, fontWeight: FontWeight.w600, letterSpacing: 1.2, color: AppColors.inkMuted),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Sign in or create one to add events and follow their review. Or continue as a guest below.',
+                        style: GoogleFonts.outfit(fontSize: 12, height: 1.5, color: AppColors.inkMid),
+                      ),
+                      const SizedBox(height: 14),
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton(
+                          onPressed: () => context.push('/signin'),
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 13),
+                            side: BorderSide(color: AppColors.forest),
+                            foregroundColor: AppColors.forest,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                          ),
+                          child: Text('Sign in or create account',
+                              style: GoogleFonts.outfit(fontSize: 13, fontWeight: FontWeight.w600)),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
 
               const SizedBox(height: 24),
 
@@ -166,7 +243,7 @@ class _WelcomePageState extends State<WelcomePage> {
                             ),
                             const SizedBox(height: 10),
                             Text(
-                              _confirmedLocation,
+                              _confirmedLocation.isEmpty ? 'Set your neighborhood' : _confirmedLocation,
                               style: GoogleFonts.outfit(
                                 fontSize: 13,
                                 fontWeight: FontWeight.w600,
@@ -232,33 +309,6 @@ class _WelcomePageState extends State<WelcomePage> {
                         ),
                       ],
                     ),
-                    const SizedBox(height: 12),
-                    GestureDetector(
-                      onTap: _locating ? null : _detectLocation,
-                      child: Row(
-                        children: [
-                          _locating
-                              ? SizedBox(
-                                  width: 16,
-                                  height: 16,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    color: AppColors.forest,
-                                  ),
-                                )
-                              : Icon(Icons.my_location, size: 16, color: AppColors.forest),
-                          const SizedBox(width: 6),
-                          Text(
-                            _locating ? 'Detecting location…' : 'Use my current location',
-                            style: GoogleFonts.outfit(
-                              fontSize: 13,
-                              color: _locating ? AppColors.inkMuted : AppColors.forest,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
                     if (_locationSet) ...[
                       const SizedBox(height: 12),
                       Container(
@@ -314,32 +364,43 @@ class _WelcomePageState extends State<WelcomePage> {
 
               const SizedBox(height: 24),
 
-              // CTA buttons
+              // Primary action depends on who is here and what is already set up
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
-                  onPressed: () => context.go('/interests'),
+                  onPressed: () => context.go(hasInterests ? '/feed' : '/interests'),
                   style: ElevatedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(vertical: 16),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                   ),
                   child: Text(
-                    'Set my interests →',
+                    primaryLabel,
                     style: GoogleFonts.outfit(fontSize: 15, fontWeight: FontWeight.w600),
                   ),
                 ),
               ),
-              const SizedBox(height: 10),
-              SizedBox(
-                width: double.infinity,
-                child: TextButton(
-                  onPressed: () => context.go('/feed'),
-                  child: Text(
-                    'Skip for now',
-                    style: GoogleFonts.outfit(fontSize: 14, color: AppColors.inkMid),
+              if (!hasInterests) ...[
+                const SizedBox(height: 10),
+                SizedBox(
+                  width: double.infinity,
+                  child: TextButton(
+                    onPressed: () => context.go('/feed'),
+                    child: Text(
+                      'Skip for now',
+                      style: GoogleFonts.outfit(fontSize: 14, color: AppColors.inkMid),
+                    ),
                   ),
                 ),
-              ),
+              ],
+              if (!signedIn) ...[
+                const SizedBox(height: 6),
+                Center(
+                  child: Text(
+                    'You can sign in any time from the You tab.',
+                    style: GoogleFonts.outfit(fontSize: 11, color: AppColors.inkMuted),
+                  ),
+                ),
+              ],
             ],
           ),
         ),

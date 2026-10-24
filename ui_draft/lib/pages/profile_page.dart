@@ -108,7 +108,7 @@ class _ProfileView extends StatelessWidget {
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: GoogleFonts.outfit(fontSize: 18, fontWeight: FontWeight.w600, color: AppColors.ink)),
-                          Text(_subtitle(prefs.locationLabel),
+                          Text(_subtitle(prefs.displayLocation),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: GoogleFonts.outfit(fontSize: 11, color: AppColors.inkMuted)),
@@ -188,7 +188,7 @@ class _ProfileView extends StatelessWidget {
                           children: [
                             _sectionLabel('LOCATION'),
                             const SizedBox(height: 6),
-                            Text(prefs.locationLabel,
+                            Text(prefs.displayLocation,
                                 style: GoogleFonts.outfit(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.ink)),
                           ],
                         ),
@@ -287,7 +287,8 @@ class _ProfileView extends StatelessWidget {
   }
 }
 
-/// Saved events, interests, and (when signed in) submissions sent.
+/// Guests see saved events and interests. Signed-in users see saved,
+/// submitted, and approved events.
 class _StatsRow extends StatefulWidget {
   final bool signedIn;
   final int interestCount;
@@ -324,23 +325,38 @@ class _StatsRowState extends State<_StatsRow> {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: [
-        ListenableBuilder(
-          listenable: SavedEventsStore.instance,
-          builder: (context, _) => _tile('${SavedEventsStore.instance.count}', 'Saved\nevents'),
-        ),
-        const SizedBox(width: 8),
-        _tile('${widget.interestCount}', 'Interests\nchosen'),
-        const SizedBox(width: 8),
-        if (_submissions == null)
-          _tile('–', 'Events\nsubmitted')
-        else
-          StreamBuilder<List<MySubmission>>(
-            stream: _submissions,
-            builder: (context, snap) => _tile('${snap.data?.length ?? 0}', 'Events\nsubmitted'),
-          ),
-      ],
+    final saved = ListenableBuilder(
+      listenable: SavedEventsStore.instance,
+      builder: (context, _) => _tile('${SavedEventsStore.instance.count}', 'Saved\nevents'),
+    );
+
+    // Guests: a smaller set. Signing in unlocks the account stats.
+    final submissions = _submissions;
+    if (submissions == null) {
+      return Row(
+        children: [
+          saved,
+          const SizedBox(width: 8),
+          _tile('${widget.interestCount}', 'Interests\nchosen'),
+        ],
+      );
+    }
+
+    return StreamBuilder<List<MySubmission>>(
+      stream: submissions,
+      builder: (context, snap) {
+        final items = snap.data ?? const <MySubmission>[];
+        final approved = items.where((s) => s.status == SubmissionStatus.approved).length;
+        return Row(
+          children: [
+            saved,
+            const SizedBox(width: 8),
+            _tile('${items.length}', 'Events\nsubmitted'),
+            const SizedBox(width: 8),
+            _tile('$approved', 'Events\napproved'),
+          ],
+        );
+      },
     );
   }
 }
