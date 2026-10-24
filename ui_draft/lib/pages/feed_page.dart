@@ -263,7 +263,7 @@ class _FeedPageState extends State<FeedPage> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        prefs.locationLabel.toUpperCase(),
+                        prefs.displayLocation.toUpperCase(),
                         style: GoogleFonts.outfit(fontSize: 10, fontWeight: FontWeight.w600, letterSpacing: 1.4, color: AppColors.amber),
                       ),
                       const SizedBox(height: 4),
