@@ -5,6 +5,7 @@ import 'firebase_options.dart';
 import 'app_theme.dart';
 import 'router.dart';
 import 'services/preferences_store.dart';
+import 'services/saved_events_store.dart';
  
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -12,7 +13,8 @@ void main() async {
     options: DefaultFirebaseOptions.currentPlatform,
   );
   await PreferencesStore.instance.load();
- 
+  await SavedEventsStore.instance.load();
+
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(
       statusBarColor: Colors.transparent,
