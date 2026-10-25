@@ -13,6 +13,7 @@ import { Collector } from "../lib/collector.js";
 import { fetchJson } from "../lib/http.js";
 import { cleanText, truncate, unshout } from "../lib/text.js";
 import { parseNyLocalIso, nyDateString } from "../lib/time.js";
+import { geocode } from "../lib/geocode.js";
 
 const ENDPOINT = "https://data.cityofnewyork.us/resource/tvpp-9vvx.json";
 const PAGE = 5000;
@@ -55,7 +56,8 @@ export function permitLocation(e) {
    return `${first}${more}${e.event_borough ? `, ${e.event_borough}` : ""}`;
 }
 
-export function mapPermit(e, collector) {
+export async function mapPermit(e, collector) {
+   const id = permitDocId(e); // moved up: it was used before being declared
    const startsAt = parseNyLocalIso(e.start_date_time);
    const endsAt = parseNyLocalIso(e.end_date_time);
 
@@ -66,7 +68,6 @@ export function mapPermit(e, collector) {
       return collector.skip("event already ended", id);
    }
    const category = TYPE_TO_CATEGORY[e.event_type];
-   const id = permitDocId(e);
    if (!category)
       return (
          collector.fetched++,
@@ -76,6 +77,16 @@ export function mapPermit(e, collector) {
       e.street_closure_type && e.street_closure_type !== "N/A"
          ? ` Street closure: ${e.street_closure_type}.`
          : "";
+
+   // Geocode the first street segment, after the skips above so we only
+   // look up events we actually keep.
+   const firstSegment = String(e.event_location ?? "").split(
+      /\s*,\s+(?=[A-Za-z0-9])/,
+   )[0];
+   const geo = await geocode(
+      [firstSegment, e.event_borough, "NY"].filter(Boolean).join(", "),
+   );
+
    collector.add({
       id,
       categoryId: category,
@@ -89,6 +100,8 @@ export function mapPermit(e, collector) {
       startsAt,
       endsAt,
       expiresAt: endsAt ?? startsAt,
+      latitude: geo?.latitude,
+      longitude: geo?.longitude,
    });
 }
 
@@ -110,7 +123,7 @@ export async function fetchPermits({ now, days }) {
       const rows = await fetchJson(u.toString());
       if (!Array.isArray(rows))
          throw new Error("Permits: expected a JSON array");
-      for (const r of rows) mapPermit(r, c);
+      for (const r of rows) await mapPermit(r, c);
       if (rows.length < PAGE) break;
    }
    return c;

@@ -6,7 +6,13 @@ export const CATEGORY_IDS = [
    "local-culture",
    "mutual-aid",
 ];
-
+const isNycCoord = (lat, lng) =>
+   Number.isFinite(lat) &&
+   Number.isFinite(lng) &&
+   lat > 40.4 &&
+   lat < 41.0 &&
+   lng > -74.4 &&
+   lng < -73.6;
 /** Thrown when a source can't run because of missing configuration (e.g. a token). */
 export class ConfigError extends Error {}
 
@@ -41,6 +47,8 @@ export class Collector {
       action,
       spots,
       url,
+      latitude,
+      longitude,
    }) {
       this.fetched++;
       const ref = `${id ?? "?"} ${title ?? ""}`.trim();
@@ -69,6 +77,10 @@ export class Collector {
       if (action) data.action = action;
       if (Number.isFinite(spots)) data.spots = spots;
       if (url) data.url = url;
+      if (isNycCoord(latitude, longitude)) {
+         data.latitude = latitude;
+         data.longitude = longitude;
+      }
       this.docs.set(id, { id, data });
       return true;
    }
