@@ -5,7 +5,7 @@ import { Collector, ConfigError } from "../lib/collector.js";
 import { fetchJson } from "../lib/http.js";
 import { cleanText, truncate } from "../lib/text.js";
 import { nyDateString, nyWallClockToDate, parseClock } from "../lib/time.js";
-import { geocode } from "../lib/geocode.js";
+import geocode from "../lib/geocode.js";
 
 // Council meets in a few buildings; map room names to an address the geocoder knows.
 const KNOWN_PLACES = [
