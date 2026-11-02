@@ -85,6 +85,31 @@ class SubmissionService {
         .timeout(const Duration(seconds: 12));
   }
 
+  /// Deletes every submission the signed-in user has sent. Used when they
+  /// delete their account. Events that were already approved and copied into
+  /// the public feed are not affected (they hold no personal details).
+  Future<void> deleteAllMine() async {
+    final user = AuthService.instance.currentUser;
+    if (user == null) return;
+    final db = FirebaseFirestore.instance;
+
+    final snapshot = await db
+        .collection('submissions')
+        .where('submitterUid', isEqualTo: user.uid)
+        .get()
+        .timeout(const Duration(seconds: 15));
+
+    // Firestore batches hold up to 500 writes; stay well under.
+    const chunk = 400;
+    for (var i = 0; i < snapshot.docs.length; i += chunk) {
+      final batch = db.batch();
+      for (final doc in snapshot.docs.skip(i).take(chunk)) {
+        batch.delete(doc.reference);
+      }
+      await batch.commit().timeout(const Duration(seconds: 15));
+    }
+  }
+
   /// The signed-in user's own submissions, newest first, updating live when a
   /// reviewer changes a status. Empty if nobody is signed in.
   Stream<List<MySubmission>> watchMine() {
