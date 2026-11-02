@@ -9,6 +9,8 @@ import '../services/mock_events.dart';
 import '../services/preferences_store.dart';
 import '../widgets/save_button.dart';
 import 'package:go_router/go_router.dart';
+import '../services/location_service.dart';
+import '../utils/distance.dart';
 
 /// Flip to true to develop against placeholder data instead of Firestore.
 const bool _useMockEvents = false;
@@ -85,8 +87,11 @@ class _FeedPageState extends State<FeedPage> {
     setState(() => _query = '');
   }
 
-  List<String> get _tokens =>
-      _query.toLowerCase().split(RegExp(r'\s+')).where((t) => t.isNotEmpty).toList();
+  List<String> get _tokens => _query
+      .toLowerCase()
+      .split(RegExp(r'\s+'))
+      .where((t) => t.isNotEmpty)
+      .toList();
 
   String _searchTextFor(Event e) => _searchText[e] ??=
       '${e.title} ${e.org} ${e.description} ${e.location ?? ''} ${e.date} ${e.category.label}'
@@ -193,11 +198,13 @@ class _FeedPageState extends State<FeedPage> {
                 onTap: () => setState(() => _activeCategoryId = chipId),
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 150),
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
                   decoration: BoxDecoration(
                     color: isActive ? AppColors.forest : AppColors.ground,
                     borderRadius: BorderRadius.circular(20),
-                    border: isActive ? null : Border.all(color: AppColors.border),
+                    border:
+                        isActive ? null : Border.all(color: AppColors.border),
                   ),
                   child: Text(
                     chips[i].label,
@@ -239,120 +246,174 @@ class _FeedPageState extends State<FeedPage> {
           Container(height: topInset, color: AppColors.canvas),
           Expanded(
             child: StreamBuilder<List<Event>>(
-        stream: _eventsStream,
-        builder: (context, snap) {
-          final all = snap.data ?? const <Event>[];
-          final visible = _filter(all);
-          final hasQuery = _query.trim().isNotEmpty;
+              stream: _eventsStream,
+              builder: (context, snap) {
+                final all = snap.data ?? const <Event>[];
+                final visible = List<Event>.from(_filter(all));
 
-          final stillLoading = !snap.hasData && !snap.hasError;
-          // Small inline notice when the stream errored but we still have events.
-          final notice = snap.hasError && all.isNotEmpty
-              ? "Couldn't load community events."
-              : null;
+                final userLat = LocationService.instance.latitude;
+                final userLng = LocationService.instance.longitude;
 
-          return CustomScrollView(
-            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-            slivers: [
-              // Big title: scrolls away with the content.
-              SliverToBoxAdapter(
-                child: Container(
-                  color: AppColors.canvas,
-                  padding: const EdgeInsets.fromLTRB(24, 14, 24, 14),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        prefs.displayLocation.toUpperCase(),
-                        style: GoogleFonts.outfit(fontSize: 10, fontWeight: FontWeight.w600, letterSpacing: 1.4, color: AppColors.amber),
-                      ),
-                      const SizedBox(height: 4),
-                      RichText(
-                        text: TextSpan(
-                          style: GoogleFonts.fraunces(fontSize: 24, fontWeight: FontWeight.w300, color: AppColors.ink),
-                          children: const [
-                            TextSpan(text: "What's happening "),
-                            TextSpan(text: 'near you', style: TextStyle(fontStyle: FontStyle.italic, fontWeight: FontWeight.w400)),
+                if (userLat != null && userLng != null) {
+                  visible.sort((a, b) {
+                    // Events without coordinates go to the bottom.
+                    final aHasLocation =
+                        a.latitude != null && a.longitude != null;
+                    final bHasLocation =
+                        b.latitude != null && b.longitude != null;
+
+                    if (!aHasLocation && !bHasLocation) return 0;
+                    if (!aHasLocation) return 1;
+                    if (!bHasLocation) return -1;
+
+                    final distanceA = distanceInMiles(
+                      userLat,
+                      userLng,
+                      a.latitude!,
+                      a.longitude!,
+                    );
+
+                    final distanceB = distanceInMiles(
+                      userLat,
+                      userLng,
+                      b.latitude!,
+                      b.longitude!,
+                    );
+
+                    return distanceA.compareTo(distanceB);
+                  });
+                }
+                final hasQuery = _query.trim().isNotEmpty;
+
+                final stillLoading = !snap.hasData && !snap.hasError;
+                // Small inline notice when the stream errored but we still have events.
+                final notice = snap.hasError && all.isNotEmpty
+                    ? "Couldn't load community events."
+                    : null;
+
+                return CustomScrollView(
+                  keyboardDismissBehavior:
+                      ScrollViewKeyboardDismissBehavior.onDrag,
+                  slivers: [
+                    // Big title: scrolls away with the content.
+                    SliverToBoxAdapter(
+                      child: Container(
+                        color: AppColors.canvas,
+                        padding: const EdgeInsets.fromLTRB(24, 14, 24, 14),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              prefs.displayLocation.toUpperCase(),
+                              style: GoogleFonts.outfit(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w600,
+                                  letterSpacing: 1.4,
+                                  color: AppColors.amber),
+                            ),
+                            const SizedBox(height: 4),
+                            RichText(
+                              text: TextSpan(
+                                style: GoogleFonts.fraunces(
+                                    fontSize: 24,
+                                    fontWeight: FontWeight.w300,
+                                    color: AppColors.ink),
+                                children: const [
+                                  TextSpan(text: "What's happening "),
+                                  TextSpan(
+                                      text: 'near you',
+                                      style: TextStyle(
+                                          fontStyle: FontStyle.italic,
+                                          fontWeight: FontWeight.w400)),
+                                ],
+                              ),
+                            ),
                           ],
                         ),
                       ),
-                    ],
-                  ),
-                ),
-              ),
-
-              // Pinned: category chips and the search button stay reachable
-              // while scrolling. The search field joins them when opened.
-              SliverPersistentHeader(
-                pinned: true,
-                delegate: _FeedHeaderDelegate(
-                  searchRow: _searching ? _buildSearchRow() : null,
-                  chipsRow: _buildChipsRow(chips),
-                ),
-              ),
-
-              // Result count
-              if (hasQuery && visible.isNotEmpty)
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(22, 14, 20, 0),
-                    child: Text(
-                      '${visible.length} ${visible.length == 1 ? 'result' : 'results'}',
-                      style: GoogleFonts.outfit(fontSize: 11, color: AppColors.inkMuted),
                     ),
-                  ),
-                ),
 
-              // Partial-failure notice
-              if (notice != null)
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
-                    child: Text(notice, style: GoogleFonts.outfit(fontSize: 11, color: AppColors.inkMuted)),
-                  ),
-                ),
-
-              // Loading → error → empty → list
-              if (all.isEmpty && stillLoading)
-                SliverFillRemaining(
-                  hasScrollBody: false,
-                  child: Center(child: CircularProgressIndicator(color: AppColors.forest)),
-                )
-              else if (all.isEmpty && snap.hasError)
-                _MessageSliver(
-                  message: "Couldn't load events. Check your connection and try again.",
-                  detail: kDebugMode ? '${snap.error}' : null,
-                )
-              else if (visible.isEmpty)
-                _MessageSliver(
-                  message: hasQuery
-                      ? 'No events match “${_query.trim()}”.'
-                      : (_activeCategoryId == _forYouId
-                          ? 'Nothing matching your interests yet.\nTry "All" or edit your interests in the You tab.'
-                          : 'No events in this category yet.'),
-                  // Offer to widen the search when a category chip is limiting it.
-                  actionLabel: hasQuery && _activeCategoryId != null ? 'Search all events' : null,
-                  onAction: () => setState(() => _activeCategoryId = null),
-                )
-              else
-                SliverPadding(
-                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 100),
-                  sliver: SliverList(
-                    delegate: SliverChildBuilderDelegate(
-                      (context, i) {
-                        final event = visible[i];
-                        return Padding(
-                          padding: const EdgeInsets.only(bottom: 12),
-                          child: _EventCard(event: event),
-                        );
-                      },
-                      childCount: visible.length,
+                    // Pinned: category chips and the search button stay reachable
+                    // while scrolling. The search field joins them when opened.
+                    SliverPersistentHeader(
+                      pinned: true,
+                      delegate: _FeedHeaderDelegate(
+                        searchRow: _searching ? _buildSearchRow() : null,
+                        chipsRow: _buildChipsRow(chips),
+                      ),
                     ),
-                  ),
-                ),
-            ],
-          );
-        },
+
+                    // Result count
+                    if (hasQuery && visible.isNotEmpty)
+                      SliverToBoxAdapter(
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(22, 14, 20, 0),
+                          child: Text(
+                            '${visible.length} ${visible.length == 1 ? 'result' : 'results'}',
+                            style: GoogleFonts.outfit(
+                                fontSize: 11, color: AppColors.inkMuted),
+                          ),
+                        ),
+                      ),
+
+                    // Partial-failure notice
+                    if (notice != null)
+                      SliverToBoxAdapter(
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+                          child: Text(notice,
+                              style: GoogleFonts.outfit(
+                                  fontSize: 11, color: AppColors.inkMuted)),
+                        ),
+                      ),
+
+                    // Loading → error → empty → list
+                    if (all.isEmpty && stillLoading)
+                      SliverFillRemaining(
+                        hasScrollBody: false,
+                        child: Center(
+                            child: CircularProgressIndicator(
+                                color: AppColors.forest)),
+                      )
+                    else if (all.isEmpty && snap.hasError)
+                      _MessageSliver(
+                        message:
+                            "Couldn't load events. Check your connection and try again.",
+                        detail: kDebugMode ? '${snap.error}' : null,
+                      )
+                    else if (visible.isEmpty)
+                      _MessageSliver(
+                        message: hasQuery
+                            ? 'No events match “${_query.trim()}”.'
+                            : (_activeCategoryId == _forYouId
+                                ? 'Nothing matching your interests yet.\nTry "All" or edit your interests in the You tab.'
+                                : 'No events in this category yet.'),
+                        // Offer to widen the search when a category chip is limiting it.
+                        actionLabel: hasQuery && _activeCategoryId != null
+                            ? 'Search all events'
+                            : null,
+                        onAction: () =>
+                            setState(() => _activeCategoryId = null),
+                      )
+                    else
+                      SliverPadding(
+                        padding: const EdgeInsets.fromLTRB(20, 16, 20, 100),
+                        sliver: SliverList(
+                          delegate: SliverChildBuilderDelegate(
+                            (context, i) {
+                              final event = visible[i];
+                              return Padding(
+                                padding: const EdgeInsets.only(bottom: 12),
+                                child: _EventCard(event: event),
+                              );
+                            },
+                            childCount: visible.length,
+                          ),
+                        ),
+                      ),
+                  ],
+                );
+              },
             ),
           ),
         ],
@@ -376,7 +437,8 @@ class _FeedHeaderDelegate extends SliverPersistentHeaderDelegate {
 
   // +1 for the bottom border, which takes 1px of the box (this was the
   // "bottom overflowed by 1 pixel" error).
-  double get _extent => _chipsHeight + (searchRow != null ? _searchHeight : 0) + 1;
+  double get _extent =>
+      _chipsHeight + (searchRow != null ? _searchHeight : 0) + 1;
 
   @override
   double get minExtent => _extent;
@@ -384,19 +446,26 @@ class _FeedHeaderDelegate extends SliverPersistentHeaderDelegate {
   double get maxExtent => _extent;
 
   @override
-  Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) {
+  Widget build(
+      BuildContext context, double shrinkOffset, bool overlapsContent) {
     return Container(
       decoration: BoxDecoration(
         color: AppColors.canvas,
         border: Border(bottom: BorderSide(color: AppColors.border)),
         // Soft shadow only once the list is scrolling underneath.
         boxShadow: overlapsContent
-            ? [BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 8, offset: const Offset(0, 2))]
+            ? [
+                BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.06),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2))
+              ]
             : null,
       ),
       child: Column(
         children: [
-          if (searchRow != null) SizedBox(height: _searchHeight, child: searchRow),
+          if (searchRow != null)
+            SizedBox(height: _searchHeight, child: searchRow),
           SizedBox(height: _chipsHeight, child: chipsRow),
         ],
       ),
@@ -423,7 +492,8 @@ class _FadingScroller extends StatefulWidget {
 class _FadingScrollerState extends State<_FadingScroller> {
   static const double _fadeWidth = 28;
   bool _fadeLeft = false;
-  bool _fadeRight = true; // assume overflow until the first layout says otherwise
+  bool _fadeRight =
+      true; // assume overflow until the first layout says otherwise
 
   void _update(ScrollMetrics m) {
     final left = m.pixels > 4;
@@ -480,7 +550,8 @@ class _MessageSliver extends StatelessWidget {
   final String? detail;
   final String? actionLabel;
   final VoidCallback? onAction;
-  const _MessageSliver({required this.message, this.detail, this.actionLabel, this.onAction});
+  const _MessageSliver(
+      {required this.message, this.detail, this.actionLabel, this.onAction});
 
   @override
   Widget build(BuildContext context) {
@@ -495,14 +566,16 @@ class _MessageSliver extends StatelessWidget {
               Text(
                 message,
                 textAlign: TextAlign.center,
-                style: GoogleFonts.outfit(fontSize: 13, color: AppColors.inkMuted, height: 1.5),
+                style: GoogleFonts.outfit(
+                    fontSize: 13, color: AppColors.inkMuted, height: 1.5),
               ),
               if (detail != null) ...[
                 const SizedBox(height: 10),
                 Text(
                   detail!,
                   textAlign: TextAlign.center,
-                  style: GoogleFonts.outfit(fontSize: 10, color: AppColors.inkMuted),
+                  style: GoogleFonts.outfit(
+                      fontSize: 10, color: AppColors.inkMuted),
                 ),
               ],
               if (actionLabel != null && onAction != null) ...[
@@ -514,7 +587,10 @@ class _MessageSliver extends StatelessWidget {
                     padding: const EdgeInsets.all(6),
                     child: Text(
                       actionLabel!,
-                      style: GoogleFonts.outfit(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.forest),
+                      style: GoogleFonts.outfit(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.forest),
                     ),
                   ),
                 ),
@@ -551,29 +627,44 @@ class _EventCard extends StatelessWidget {
             Row(
               children: [
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                   decoration: BoxDecoration(
                     color: category.lightColor,
                     borderRadius: BorderRadius.circular(20),
                   ),
-                  child: Text(category.shortLabel, style: GoogleFonts.outfit(fontSize: 11, fontWeight: FontWeight.w600, color: category.color)),
+                  child: Text(category.shortLabel,
+                      style: GoogleFonts.outfit(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: category.color)),
                 ),
                 const Spacer(),
                 if (event.spots != null)
-                  Text('${event.spots} spots left', style: GoogleFonts.outfit(fontSize: 11, color: AppColors.inkMuted)),
+                  Text('${event.spots} spots left',
+                      style: GoogleFonts.outfit(
+                          fontSize: 11, color: AppColors.inkMuted)),
                 const SizedBox(width: 10),
                 SaveButton(event: event),
               ],
             ),
             const SizedBox(height: 12),
-            Text(event.title, style: GoogleFonts.outfit(fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.ink)),
+            Text(event.title,
+                style: GoogleFonts.outfit(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.ink)),
             if (event.org.isNotEmpty) ...[
               const SizedBox(height: 3),
-              Text(event.org, style: GoogleFonts.outfit(fontSize: 11, color: AppColors.inkMuted)),
+              Text(event.org,
+                  style: GoogleFonts.outfit(
+                      fontSize: 11, color: AppColors.inkMuted)),
             ],
             if (event.description.isNotEmpty) ...[
               const SizedBox(height: 8),
-              Text(event.description, style: GoogleFonts.outfit(fontSize: 12, color: AppColors.inkMid, height: 1.5)),
+              Text(event.description,
+                  style: GoogleFonts.outfit(
+                      fontSize: 12, color: AppColors.inkMid, height: 1.5)),
             ],
             const SizedBox(height: 14),
             Row(
@@ -582,24 +673,28 @@ class _EventCard extends StatelessWidget {
                   child: Row(
                     children: [
                       if (event.date.isNotEmpty) ...[
-                        Icon(Icons.calendar_today_outlined, size: 12, color: AppColors.inkMuted),
+                        Icon(Icons.calendar_today_outlined,
+                            size: 12, color: AppColors.inkMuted),
                         const SizedBox(width: 4),
                         Flexible(
                           child: Text(event.date,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: GoogleFonts.outfit(fontSize: 11, color: AppColors.inkMuted)),
+                              style: GoogleFonts.outfit(
+                                  fontSize: 11, color: AppColors.inkMuted)),
                         ),
                       ],
                       if (where.isNotEmpty) ...[
                         const SizedBox(width: 12),
-                        Icon(Icons.location_on_outlined, size: 12, color: AppColors.inkMuted),
+                        Icon(Icons.location_on_outlined,
+                            size: 12, color: AppColors.inkMuted),
                         const SizedBox(width: 4),
                         Flexible(
                           child: Text(where,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: GoogleFonts.outfit(fontSize: 11, color: AppColors.inkMuted)),
+                              style: GoogleFonts.outfit(
+                                  fontSize: 11, color: AppColors.inkMuted)),
                         ),
                       ],
                     ],
@@ -610,12 +705,16 @@ class _EventCard extends StatelessWidget {
                   onPressed: () => context.push('/feed/event', extra: event),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: category.color,
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                     minimumSize: Size.zero,
                     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12)),
                   ),
-                  child: Text(event.action, style: GoogleFonts.outfit(fontSize: 11, fontWeight: FontWeight.w600)),
+                  child: Text(event.action,
+                      style: GoogleFonts.outfit(
+                          fontSize: 11, fontWeight: FontWeight.w600)),
                 ),
               ],
             ),
