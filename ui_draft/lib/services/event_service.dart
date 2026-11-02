@@ -47,7 +47,8 @@ class EventService {
     final rawCategory = (d['categoryId'] ?? d['category'])?.toString();
     final categoryId = categoryIdFromRaw(rawCategory);
     if (categoryId == null) {
-      debugPrint('EventService: skipping "$id" — unknown category "$rawCategory"');
+      debugPrint(
+          'EventService: skipping "$id" — unknown category "$rawCategory"');
       return null;
     }
 
@@ -70,6 +71,9 @@ class EventService {
       description: d['description']?.toString() ?? '',
       action: d['action']?.toString() ?? Event.defaultActionFor(categoryId),
       spots: d['spots'] is num ? (d['spots'] as num).toInt() : null,
+      latitude: d['latitude'] is num ? (d['latitude'] as num).toDouble() : null,
+      longitude:
+          d['longitude'] is num ? (d['longitude'] as num).toDouble() : null,
     );
   }
 
@@ -80,7 +84,9 @@ class EventService {
     if (s.isEmpty) return null;
     if (!s.contains('://')) s = 'https://$s'; // tolerate "www.example.org/page"
     final uri = Uri.tryParse(s);
-    final ok = uri != null && uri.hasAuthority && (uri.scheme == 'http' || uri.scheme == 'https');
+    final ok = uri != null &&
+        uri.hasAuthority &&
+        (uri.scheme == 'http' || uri.scheme == 'https');
     return ok ? s : null;
   }
 
