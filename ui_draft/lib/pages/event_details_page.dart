@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:url_launcher/url_launcher.dart';
 import '../app_theme.dart';
 import '../models/events.dart';
+import '../services/link_safety.dart';
+import '../widgets/rsvp_button.dart';
 
 /// Full-screen details for one event. Reached from the feed with:
 ///   context.push('/feed/event', extra: event);
@@ -13,23 +14,6 @@ class EventDetailsPage extends StatelessWidget {
 
   static void _goBack(BuildContext context) =>
       context.canPop() ? context.pop() : context.go('/feed');
-
-  static Future<void> _openOfficialSite(BuildContext context, String url) async {
-    var opened = false;
-    try {
-      final uri = Uri.tryParse(url);
-      if (uri != null) {
-        opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
-      }
-    } catch (_) {
-      opened = false;
-    }
-    if (!opened && context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Couldn't open the official site.")),
-      );
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -85,22 +69,24 @@ class EventDetailsPage extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 20),
+                    RsvpButton(event: e, color: color),
+                    const SizedBox(height: 14),
                     if (url != null)
-                      ElevatedButton(
-                        onPressed: () => _openOfficialSite(context, url),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: color,
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(vertical: 15, horizontal: 20),
+                      OutlinedButton(
+                        onPressed: () => LinkSafety.open(context, url),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: AppColors.inkMid,
+                          side: BorderSide(color: AppColors.border),
+                          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 20),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                         ),
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            Text('Continue on official site',
-                                style: GoogleFonts.outfit(fontSize: 14, fontWeight: FontWeight.w600)),
+                            Text('View official page',
+                                style: GoogleFonts.outfit(fontSize: 13, fontWeight: FontWeight.w500)),
                             const SizedBox(width: 8),
-                            const Icon(Icons.open_in_new, size: 16),
+                            const Icon(Icons.open_in_new, size: 15),
                           ],
                         ),
                       )

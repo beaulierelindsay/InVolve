@@ -49,6 +49,54 @@ class AuthService {
   Future<void> sendPasswordReset(String email) =>
       _auth.sendPasswordResetEmail(email: email.trim());
 
+  /// Re-sends the verification email to the signed-in user.
+  Future<void> sendVerificationEmail() async {
+    final user = currentUser;
+    if (user == null) throw StateError('Not signed in');
+    await user.sendEmailVerification();
+  }
+
+  /// Firebase doesn't update the "verified" flag by itself after the user taps
+  /// the link in their email, so ask for the latest account info. Returns
+  /// whether the email is now verified.
+  Future<bool> refreshVerification() async {
+    final user = currentUser;
+    if (user == null) return false;
+    await user.reload();
+    final verified = _auth.currentUser?.emailVerified ?? false;
+    // Refresh the sign-in token too, so server rules that check
+    // `email_verified` (if we add them later) see the new value.
+    if (verified) await _auth.currentUser?.getIdToken(true);
+    return verified;
+  }
+
+  /// Changes the name shown in the app (greeting, profile).
+  Future<void> updateDisplayName(String name) async {
+    final user = currentUser;
+    if (user == null) throw StateError('Not signed in');
+    await user.updateDisplayName(name.trim());
+    await user.reload();
+  }
+
+  /// Firebase only lets someone delete their account shortly after signing in,
+  /// so the password is checked again first.
+  Future<void> reauthenticate(String password) async {
+    final user = currentUser;
+    final email = user?.email;
+    if (user == null || email == null) throw StateError('Not signed in');
+    await user.reauthenticateWithCredential(
+      EmailAuthProvider.credential(email: email, password: password),
+    );
+  }
+
+  /// Permanently deletes the signed-in account (and signs the user out).
+  /// Call [reauthenticate] first, and remove the user's data before this.
+  Future<void> deleteAccount() async {
+    final user = currentUser;
+    if (user == null) throw StateError('Not signed in');
+    await user.delete();
+  }
+
   Future<void> signOut() => _auth.signOut();
 
   /// Plain-language message for a Firebase Auth error.
@@ -68,6 +116,8 @@ class AuthService {
         return 'Too many attempts. Please wait a moment and try again.';
       case 'network-request-failed':
         return 'Couldn\u2019t reach the server. Check your connection.';
+      case 'requires-recent-login':
+        return 'For security, please sign in again, then try once more.';
       case 'operation-not-allowed':
         return 'Email sign-in isn\u2019t turned on yet. Ask the team to enable it in Firebase.';
       default:
