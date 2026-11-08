@@ -559,5 +559,36 @@
   "west 138 street between adam clayton powell jr boulevard and frederick douglas boulevard, manhattan": null,
   "rockaway beach boulevard between beach 128 street and beach 139 street (+2 more blocks), queens": null,
   "wexford terrace between edgerton boulevard and midland parkway (+9 more blocks), queens": null,
-  "43 street between 30 avenue and newtown road (+4 more blocks), queens": null
+  "43 street between 30 avenue and newtown road (+4 more blocks), queens": null,
+  "times square: 46/47 broadway pedestrian plaza (times sq) broadway between west   46 street and west   47 street, manhattan, ny": {
+    "latitude": 40.7562,
+    "longitude": -73.98653
+  },
+  "herald square plaza: herald square (34/35 broadway) broadway between w. 34th street and w. 35th street, manhattan, ny": {
+    "latitude": 40.749666,
+    "longitude": -73.985801
+  },
+  "kensington plaza: kensington plaza church avenue between beverly road and mcdonald avenue, brooklyn, ny": {
+    "latitude": 40.65496,
+    "longitude": -73.98154
+  },
+  "astor place between lafayette street and broadway, manhattan, ny": null,
+  "44 street between 5 avenue and 6 avenue, brooklyn, ny": null,
+  "whitney avenue between plumb    2 street and gerritsen avenue, brooklyn, ny": null,
+  "242-25 braddock avenue, queens, ny": {
+    "latitude": 40.726188,
+    "longitude": -73.725388
+  },
+  "125 crossbay boulevard, queens, ny": {
+    "latitude": 40.61388,
+    "longitude": -73.82196
+  },
+  "841 58 street, brooklyn, ny": {
+    "latitude": 40.636113,
+    "longitude": -74.007132
+  },
+  "33-15 ditmars boulevard, queens, ny": {
+    "latitude": 40.775087,
+    "longitude": -73.908882
+  }
 }
