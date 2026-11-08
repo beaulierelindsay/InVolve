@@ -6,8 +6,10 @@ import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../app_theme.dart';
 import '../models/category.dart';
+import '../models/rsvp.dart';
 import '../services/auth_service.dart';
 import '../services/preferences_store.dart';
+import '../services/rsvp_service.dart';
 import '../services/saved_events_store.dart';
 import '../services/submission_service.dart';
 
@@ -329,6 +331,8 @@ class _StatsRowState extends State<_StatsRow> {
   // Created once so rebuilds don't restart the Firestore listener.
   late final Stream<List<MySubmission>>? _submissions =
       widget.signedIn ? SubmissionService.instance.watchMine() : null;
+  late final Stream<List<Rsvp>>? _rsvps =
+      widget.signedIn ? RsvpService.instance.watchMine() : null;
 
   Widget _tile(String value, String label) => Expanded(
         child: Container(
@@ -374,14 +378,22 @@ class _StatsRowState extends State<_StatsRow> {
       builder: (context, snap) {
         final items = snap.data ?? const <MySubmission>[];
         final approved = items.where((s) => s.status == SubmissionStatus.approved).length;
-        return Row(
-          children: [
-            saved,
-            const SizedBox(width: 8),
-            _tile('${items.length}', 'Events\nsubmitted'),
-            const SizedBox(width: 8),
-            _tile('$approved', 'Events\napproved'),
-          ],
+        return StreamBuilder<List<Rsvp>>(
+          stream: _rsvps,
+          builder: (context, rsvpSnap) {
+            final going = rsvpSnap.data?.length ?? 0;
+            return Row(
+              children: [
+                saved,
+                const SizedBox(width: 8),
+                _tile('$going', 'Events\ngoing'),
+                const SizedBox(width: 8),
+                _tile('${items.length}', 'Events\nsubmitted'),
+                const SizedBox(width: 8),
+                _tile('$approved', 'Events\napproved'),
+              ],
+            );
+          },
         );
       },
     );
@@ -777,6 +789,7 @@ class _DeleteAccountDialogState extends State<_DeleteAccountDialog> {
       await AuthService.instance.reauthenticate(password);
       // 2. Remove their data while they're still signed in.
       await SubmissionService.instance.deleteAllMine();
+      await RsvpService.instance.deleteAllMine();
       // 3. Delete the account itself. This also signs them out.
       await AuthService.instance.deleteAccount();
       if (mounted) Navigator.pop(context, true);
@@ -824,6 +837,7 @@ class _DeleteAccountDialogState extends State<_DeleteAccountDialog> {
             const SizedBox(height: 8),
             Text('\u2022  Your account and sign-in', style: bodyStyle),
             Text('\u2022  Every event submission you sent', style: bodyStyle),
+            Text('\u2022  Your RSVPs and plans', style: bodyStyle),
             const SizedBox(height: 8),
             Text(
               'Events you added that were already approved stay in the feed, and they don\'t include your personal details. Saved events and interests live on this device only and are not affected.',
