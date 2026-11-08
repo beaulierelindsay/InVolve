@@ -13,7 +13,7 @@ import { Collector } from "../lib/collector.js";
 import { fetchJson } from "../lib/http.js";
 import { cleanText, truncate, unshout } from "../lib/text.js";
 import { parseNyLocalIso, nyDateString } from "../lib/time.js";
-import { geocode } from "../lib/geocode.js";
+import geocode from "../lib/geocode.js";
 
 const ENDPOINT = "https://data.cityofnewyork.us/resource/tvpp-9vvx.json";
 const PAGE = 5000;
