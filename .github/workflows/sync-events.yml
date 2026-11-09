@@ -37,6 +37,17 @@ jobs:
 
       - run: npm test
 
+      - name: Check Firebase secret
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          if [ -z "$FIREBASE_SERVICE_ACCOUNT" ]; then
+            echo "Firebase secret is EMPTY"
+            exit 1
+          else
+            echo "Firebase secret is available"
+          fi
+    
       - name: Sync events to Firestore
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
