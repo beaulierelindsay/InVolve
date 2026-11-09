@@ -8,7 +8,9 @@ import '../models/events.dart';
 ///
 /// Accepted document fields (all optional except a recognizable category):
 ///   title, categoryId (or legacy `category`), date (String or Timestamp),
-///   startsAt (Timestamp), location, description, org, action, spots
+///   startsAt (Timestamp), location, description, org, action, spots,
+///   and for events hosted through InVolve: hostUid, rsvpRequired, capacity,
+///   rsvpCount, rsvpQuestions
 class EventService {
   final CollectionReference<Map<String, dynamic>> _events =
       FirebaseFirestore.instance.collection('events');
@@ -55,7 +57,7 @@ class EventService {
     final startsAt = _asDateTime(d['startsAt'] ?? d['date']);
     final date = d['date'] is String
         ? d['date'] as String
-        : (startsAt != null ? formatEventDate(startsAt, hasTime: true) : '');
+        : (startsAt != null ? formatEventDate(startsAt, hasTime: d['hasTime'] != false) : '');
 
     final title = d['title']?.toString() ?? '';
 
@@ -74,6 +76,20 @@ class EventService {
       latitude: d['latitude'] is num ? (d['latitude'] as num).toDouble() : null,
       longitude:
           d['longitude'] is num ? (d['longitude'] as num).toDouble() : null,
+      hostUid: d['hostUid'] is String && (d['hostUid'] as String).isNotEmpty
+          ? d['hostUid'] as String
+          : null,
+      rsvpRequired: d['rsvpRequired'] == true,
+      capacity: d['capacity'] is num && (d['capacity'] as num) > 0
+          ? (d['capacity'] as num).toInt()
+          : null,
+      rsvpCount: d['rsvpCount'] is num ? (d['rsvpCount'] as num).toInt() : 0,
+      rsvpQuestions: d['rsvpQuestions'] is List
+          ? [
+              for (final q in d['rsvpQuestions'] as List)
+                if (q is String && q.trim().isNotEmpty) q.trim()
+            ]
+          : const [],
     );
   }
 

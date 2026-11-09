@@ -14,6 +14,8 @@ import '../services/rsvp_service.dart';
 /// - Internal events (all of them while kOrganizerForwardingEnabled is false):
 ///   one tap, nothing personal collected, with a plain note saying so.
 /// - Organizer events: opens a short form with an explicit consent checkbox.
+/// - Hosted events (hosted through InVolve with RSVPs turned on): the same
+///   form, plus the host's own questions. The host reads it in the app.
 class RsvpButton extends StatefulWidget {
   final Event event;
   final Color color;
@@ -44,8 +46,9 @@ class _RsvpButtonState extends State<RsvpButton> {
 
   Future<void> _rsvp() async {
     final event = widget.event;
+    final mode = rsvpModeFor(event);
     OrganizerDetails? details;
-    if (rsvpModeFor(event) == RsvpMode.organizer) {
+    if (mode != RsvpMode.internal) {
       details = await showModalBottomSheet<OrganizerDetails>(
         context: context,
         isScrollControlled: true,
@@ -58,7 +61,15 @@ class _RsvpButtonState extends State<RsvpButton> {
     setState(() => _busy = true);
     try {
       await RsvpService.instance.rsvp(event, details: details);
-      _toast(details == null ? 'Added to your plans.' : 'Saved. We\'ll pass your details to the organizer.');
+      _toast(switch (mode) {
+        RsvpMode.internal => 'Added to your plans.',
+        RsvpMode.organizer => 'Saved. We\'ll pass your details to the organizer.',
+        RsvpMode.hosted => "You're on the list. The host can see your RSVP in InVolve.",
+      });
+    } on RsvpFullException {
+      _toast('Sorry, this event is full.');
+    } on RsvpClosedException {
+      _toast("This event isn't taking RSVPs in the app anymore.");
     } catch (_) {
       _toast("Couldn't save your RSVP. Check your connection and try again.");
     } finally {
@@ -78,7 +89,9 @@ class _RsvpButtonState extends State<RsvpButton> {
         content: Text(
           shared
               ? 'This removes it from InVolve. Your details were already sent to the organizer, so contact them to cancel there too.'
-              : 'This removes the event from your plans.',
+              : rsvp.hostUid != null
+                  ? 'This takes you off the guest list and removes your details from it.'
+                  : 'This removes the event from your plans.',
           style: GoogleFonts.outfit(fontSize: 13, height: 1.5, color: AppColors.inkMid),
         ),
         actions: [
@@ -152,6 +165,12 @@ class _RsvpButtonState extends State<RsvpButton> {
                 'Tap to cancel.',
               );
             }
+            if (event.isHostedRsvp && event.isFull) {
+              return _wrap(
+                ElevatedButton(onPressed: null, style: _filled, child: _label('This event is full')),
+                null,
+              );
+            }
             return _wrap(
               ElevatedButton(
                 onPressed: (_busy || snap.connectionState == ConnectionState.waiting) ? null : _rsvp,
@@ -184,8 +203,9 @@ class _RsvpButtonState extends State<RsvpButton> {
       );
 }
 
-/// Contact form for organizer-forwarded RSVPs. Only reachable when
-/// kOrganizerForwardingEnabled is true. Phone is optional, and text messages
+/// Contact form for RSVPs that someone else will read: hosted events (read by
+/// the host in InVolve) and organizer-forwarded events (only reachable when
+/// kOrganizerForwardingEnabled is true). Phone is optional, and text messages
 /// are never opted into by default.
 class _DetailsSheet extends StatefulWidget {
   final Event event;
@@ -202,8 +222,12 @@ class _DetailsSheetState extends State<_DetailsSheet> {
   late final TextEditingController _email;
   final _phone = TextEditingController();
   final _zip = TextEditingController();
+  late final List<TextEditingController> _answers;
   bool _consent = false;
   bool _showConsentError = false;
+
+  bool get _hosted => rsvpModeFor(widget.event) == RsvpMode.hosted;
+  List<String> get _questions => _hosted ? widget.event.rsvpQuestions : const [];
 
   @override
   void initState() {
@@ -213,19 +237,21 @@ class _DetailsSheetState extends State<_DetailsSheet> {
     _first = TextEditingController(text: parts.first);
     _last = TextEditingController(text: parts.length > 1 ? parts.sublist(1).join(' ') : '');
     _email = TextEditingController(text: user?.email ?? '');
+    _answers = [for (final _ in _questions) TextEditingController()];
   }
 
   @override
   void dispose() {
-    for (final c in [_first, _last, _email, _phone, _zip]) {
+    for (final c in [_first, _last, _email, _phone, _zip, ..._answers]) {
       c.dispose();
     }
     super.dispose();
   }
 
-  String get _org => widget.event.org.isEmpty ? 'the organizer' : widget.event.org;
-  String get _consentText =>
-      'I agree to share my name, email, ZIP code and phone number (if provided) with $_org so they can register me for this event.';
+  String get _org => widget.event.org.isEmpty ? (_hosted ? 'the host' : 'the organizer') : widget.event.org;
+  String get _consentText => _hosted
+      ? 'I agree to share my name, email, phone number (if provided)${_questions.isEmpty ? '' : ' and answers'} with $_org through InVolve for this event.'
+      : 'I agree to share my name, email, ZIP code and phone number (if provided) with $_org so they can register me for this event.';
 
   void _submit() {
     final valid = _form.currentState!.validate();
@@ -238,8 +264,11 @@ class _DetailsSheetState extends State<_DetailsSheet> {
         familyName: _last.text,
         email: _email.text,
         phone: _phone.text,
-        postalCode: _zip.text,
+        postalCode: _hosted ? '' : _zip.text,
         consentText: _consentText,
+        answers: [
+          for (var i = 0; i < _questions.length; i++) (question: _questions[i], answer: _answers[i].text),
+        ],
       ),
     );
   }
@@ -270,7 +299,7 @@ class _DetailsSheetState extends State<_DetailsSheet> {
               Text('Your details',
                   style: GoogleFonts.fraunces(fontSize: 22, fontWeight: FontWeight.w400, color: AppColors.ink)),
               const SizedBox(height: 6),
-              Text('$_org needs these to register you.',
+              Text(_hosted ? 'Only $_org can see these.' : '$_org needs these to register you.',
                   style: GoogleFonts.outfit(fontSize: 13, color: AppColors.inkMuted)),
               const SizedBox(height: 16),
               Row(children: [
@@ -285,13 +314,15 @@ class _DetailsSheetState extends State<_DetailsSheet> {
                 decoration: _dec('Email'),
                 validator: (v) => (v == null || !v.contains('@') || !v.contains('.')) ? 'Enter a valid email' : null,
               ),
-              const SizedBox(height: 10),
-              TextFormField(
-                controller: _zip,
-                keyboardType: TextInputType.number,
-                decoration: _dec('ZIP code'),
-                validator: (v) => RegExp(r'^\d{5}$').hasMatch((v ?? '').trim()) ? null : 'Enter a 5-digit ZIP',
-              ),
+              if (!_hosted) ...[
+                const SizedBox(height: 10),
+                TextFormField(
+                  controller: _zip,
+                  keyboardType: TextInputType.number,
+                  decoration: _dec('ZIP code'),
+                  validator: (v) => RegExp(r'^\d{5}$').hasMatch((v ?? '').trim()) ? null : 'Enter a 5-digit ZIP',
+                ),
+              ],
               const SizedBox(height: 10),
               TextFormField(
                 controller: _phone,
@@ -301,6 +332,17 @@ class _DetailsSheetState extends State<_DetailsSheet> {
               const SizedBox(height: 4),
               Text("We won't sign you up for text messages.",
                   style: GoogleFonts.outfit(fontSize: 11, color: AppColors.inkMuted)),
+              for (var i = 0; i < _questions.length; i++) ...[
+                const SizedBox(height: 10),
+                TextFormField(
+                  controller: _answers[i],
+                  maxLength: 300,
+                  maxLines: null,
+                  textCapitalization: TextCapitalization.sentences,
+                  decoration: _dec(_questions[i]).copyWith(counterText: ''),
+                  validator: _required,
+                ),
+              ],
               const SizedBox(height: 14),
               CheckboxListTile(
                 value: _consent,

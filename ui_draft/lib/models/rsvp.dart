@@ -14,7 +14,10 @@ const bool kOrganizerForwardingEnabled = false;
 ///              personal is collected, and nobody else is told.
 /// - organizer: the user's details are collected and (later) forwarded to
 ///              the organizer so they can register the person.
-enum RsvpMode { internal, organizer }
+/// - hosted:    the event was hosted through InVolve. The user's details and
+///              answers are saved in InVolve, where the host reads them.
+///              Nothing is sent to another website, so no backend is needed.
+enum RsvpMode { internal, organizer, hosted }
 
 /// Which data source an event came from, read from its id prefix
 /// ("mobilize-1051193" -> "mobilize", "legistar-123" -> "legistar").
@@ -26,6 +29,7 @@ String eventSource(Event event) {
 }
 
 RsvpMode rsvpModeFor(Event event) {
+  if (event.isHostedRsvp) return RsvpMode.hosted;
   if (kOrganizerForwardingEnabled && eventSource(event) == 'mobilize') {
     return RsvpMode.organizer;
   }
@@ -39,7 +43,14 @@ String rsvpLabelFor(Event event) =>
 /// Honest explanation shown under the button, so nobody thinks they've been
 /// registered with an organizer when they haven't. Null when no note is needed.
 String? rsvpNoteFor(Event event) {
-  if (rsvpModeFor(event) == RsvpMode.organizer) return null;
+  final mode = rsvpModeFor(event);
+  if (mode == RsvpMode.organizer) return null;
+  if (mode == RsvpMode.hosted) {
+    final left = event.capacity == null ? null : event.capacity! - event.rsvpCount;
+    final host = event.org.isEmpty ? 'The host' : event.org;
+    final spots = left == null || left <= 0 ? '' : ' $left of ${event.capacity} spots left.';
+    return '$host collects RSVPs here in InVolve.$spots';
+  }
   if (eventSource(event) == 'legistar') {
     return 'Public meetings are open to attend. This adds it to your plans in InVolve.';
   }
@@ -61,6 +72,9 @@ class Rsvp {
   /// Only the backend will ever set 'sent' or 'failed'.
   final String forwardStatus;
 
+  /// The host who can read this RSVP, for events hosted through InVolve.
+  final String? hostUid;
+
   const Rsvp({
     required this.eventId,
     required this.eventTitle,
@@ -69,5 +83,24 @@ class Rsvp {
     required this.startsAt,
     required this.shareWithOrganizer,
     required this.forwardStatus,
+    this.hostUid,
+  });
+}
+
+/// One person's RSVP to an event the signed-in user hosts, as shown on the
+/// host's attendee list.
+class Attendee {
+  final String name;
+  final String email;
+  final String phone; // may be empty
+  final List<({String question, String answer})> answers;
+  final DateTime? rsvpAt;
+
+  const Attendee({
+    required this.name,
+    required this.email,
+    required this.phone,
+    required this.answers,
+    required this.rsvpAt,
   });
 }

@@ -26,6 +26,24 @@ class Event {
   final List<AgendaItem> agenda; // timeline for the details page; may be empty
   final double? latitude;
   final double? longitude;
+
+  /// Set only on events a user hosts through InVolve (copied from the
+  /// submission's `submitterUid` when it's approved). The host reads RSVPs
+  /// for the event inside the app.
+  final String? hostUid;
+
+  /// True when the host asked attendees to RSVP through InVolve.
+  final bool rsvpRequired;
+
+  /// Most RSVPs the host will accept, or null for no limit.
+  final int? capacity;
+
+  /// How many people have RSVP'd so far (kept up to date by [RsvpService]).
+  final int rsvpCount;
+
+  /// Extra short-answer questions the host asks on the RSVP form.
+  final List<String> rsvpQuestions;
+
   const Event({
     required this.id,
     required this.categoryId,
@@ -43,7 +61,18 @@ class Event {
     this.agenda = const [],
     this.latitude,
     this.longitude,
+    this.hostUid,
+    this.rsvpRequired = false,
+    this.capacity,
+    this.rsvpCount = 0,
+    this.rsvpQuestions = const [],
   });
+
+  /// True for events whose RSVPs are collected in the app and read by the host.
+  bool get isHostedRsvp => hostUid != null && rsvpRequired;
+
+  /// True when a capacity is set and every spot is taken.
+  bool get isFull => capacity != null && rsvpCount >= capacity!;
 
   // Display info comes from the category model, never duplicated on the event.
   EngagementCategory get category => categoryById(categoryId);

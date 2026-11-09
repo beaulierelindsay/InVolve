@@ -12,6 +12,7 @@ import '../services/preferences_store.dart';
 import '../services/rsvp_service.dart';
 import '../services/saved_events_store.dart';
 import '../services/submission_service.dart';
+import 'attendees_page.dart';
 
 /// Profile tab. Shows a guest view when nobody is signed in, and the real
 /// account (name, email, member-since, submissions) when someone is.
@@ -152,6 +153,9 @@ class _ProfileView extends StatelessWidget {
                 // Account (signed in) or invitation (guest)
                 if (signedIn) _accountCard(context) else _guestCard(context),
                 const SizedBox(height: 12),
+
+                // Guest lists for events this user hosts (hidden when none).
+                if (signedIn) _HostingCard(key: ValueKey('hosting-${user?.uid}')),
 
                 // Interests
                 Container(
@@ -312,6 +316,83 @@ class _ProfileView extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// "Events you're hosting": approved hosted events that collect RSVPs in the
+/// app, each opening its guest list. Renders nothing when there are none.
+class _HostingCard extends StatefulWidget {
+  const _HostingCard({super.key});
+
+  @override
+  State<_HostingCard> createState() => _HostingCardState();
+}
+
+class _HostingCardState extends State<_HostingCard> {
+  // Created once so rebuilds don't restart the Firestore listener.
+  late final Stream<List<MySubmission>> _stream = SubmissionService.instance.watchMine();
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<List<MySubmission>>(
+      stream: _stream,
+      builder: (context, snap) {
+        final hosting = (snap.data ?? const <MySubmission>[])
+            .where((s) => s.collectsRsvps && s.status == SubmissionStatus.approved)
+            .toList();
+        if (hosting.isEmpty) return const SizedBox.shrink();
+
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          // A Material (not a colored Container) so the rows' ink splashes show.
+          child: Material(
+            color: AppColors.canvas,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(18),
+              side: BorderSide(color: AppColors.border),
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: Padding(
+            padding: const EdgeInsets.fromLTRB(18, 18, 18, 8),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text("EVENTS YOU'RE HOSTING",
+                    style: GoogleFonts.outfit(
+                        fontSize: 10, fontWeight: FontWeight.w600, letterSpacing: 1.2, color: AppColors.inkMuted)),
+                const SizedBox(height: 4),
+                for (final s in hosting)
+                  InkWell(
+                    onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                      builder: (_) => AttendeesPage(eventId: s.id, title: s.title),
+                    )),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text(s.title,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: GoogleFonts.outfit(
+                                    fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.ink)),
+                          ),
+                          const SizedBox(width: 8),
+                          Text('Guest list',
+                              style: GoogleFonts.outfit(
+                                  fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.forest)),
+                          Icon(Icons.chevron_right, size: 18, color: AppColors.forest),
+                        ],
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            ),
+          ),
+        );
+      },
     );
   }
 }
@@ -790,6 +871,7 @@ class _DeleteAccountDialogState extends State<_DeleteAccountDialog> {
       // 2. Remove their data while they're still signed in.
       await SubmissionService.instance.deleteAllMine();
       await RsvpService.instance.deleteAllMine();
+      await RsvpService.instance.closeAllMyHostedEvents();
       // 3. Delete the account itself. This also signs them out.
       await AuthService.instance.deleteAccount();
       if (mounted) Navigator.pop(context, true);
@@ -838,6 +920,7 @@ class _DeleteAccountDialogState extends State<_DeleteAccountDialog> {
             Text('\u2022  Your account and sign-in', style: bodyStyle),
             Text('\u2022  Every event submission you sent', style: bodyStyle),
             Text('\u2022  Your RSVPs and plans', style: bodyStyle),
+            Text('\u2022  The guest lists for events you host', style: bodyStyle),
             const SizedBox(height: 8),
             Text(
               'Events you added that were already approved stay in the feed, and they don\'t include your personal details. Saved events and interests live on this device only and are not affected.',

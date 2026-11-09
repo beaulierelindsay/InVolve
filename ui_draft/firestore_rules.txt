@@ -1,0 +1,218 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── Helpers ────────────────────────────────────────────────────────────
+
+    // A real account, not an anonymous session.
+    function signedIn() {
+      return request.auth != null
+        && request.auth.token.firebase.sign_in_provider != 'anonymous';
+    }
+
+    function eventPath(eventId) {
+      return /databases/$(database)/documents/events/$(eventId);
+    }
+
+    // The signed-in user's RSVP for an event ("<uid>_<eventId>").
+    function myRsvpPath(eventId) {
+      return /databases/$(database)/documents/rsvps/$(request.auth.uid + '_' + eventId);
+    }
+
+    // Optional string field: missing, or a string of at most `max` characters.
+    function optString(data, key, max) {
+      return !(key in data) || (data[key] is string && data[key].size() <= max);
+    }
+
+    // ── Events ─────────────────────────────────────────────────────────────
+    // Anyone can read events. The pipeline and reviewers write them with
+    // admin access, which skips these rules. From the app, only the RSVP
+    // count (and, for the host, turning RSVPs off) can change.
+    match /events/{eventId} {
+      allow read: if true;
+      allow create, delete: if false;
+
+      allow update: if signedIn() && (
+        // RSVP: count goes up by one, only in the same write that creates the
+        // user's own RSVP, and never past capacity.
+        (
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['rsvpCount'])
+          && resource.data.get('rsvpRequired', false) == true
+          && request.resource.data.rsvpCount == resource.data.get('rsvpCount', 0) + 1
+          && !exists(myRsvpPath(eventId))
+          && existsAfter(myRsvpPath(eventId))
+          && (resource.data.get('capacity', null) == null
+              || request.resource.data.rsvpCount <= resource.data.capacity)
+        )
+        ||
+        // Cancel: count goes down by one, only in the same write that deletes
+        // the user's own RSVP.
+        (
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['rsvpCount'])
+          && request.resource.data.rsvpCount == resource.data.get('rsvpCount', 0) - 1
+          && request.resource.data.rsvpCount >= 0
+          && exists(myRsvpPath(eventId))
+          && !existsAfter(myRsvpPath(eventId))
+        )
+        ||
+        // The host turning off in-app RSVPs (when deleting their account).
+        (
+          resource.data.get('hostUid', null) == request.auth.uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['rsvpRequired', 'rsvpCount'])
+          && request.resource.data.rsvpRequired == false
+        )
+      );
+    }
+
+    // ── Submissions ────────────────────────────────────────────────────────
+    match /submissions/{submissionId} {
+
+      // A signed-in user can read ONLY their own submissions (this is what
+      // lets the app show "Under review" / "Approved"). Users can never edit
+      // a submission, so they can't approve themselves.
+      allow read: if request.auth != null
+        && resource.data.submitterUid == request.auth.uid;
+      allow update: if false;
+      allow delete: if request.auth != null && resource.data.submitterUid == request.auth.uid;
+
+      allow create: if
+        signedIn()
+        // the submission must be tagged with the sender's own id
+        && request.resource.data.submitterUid == request.auth.uid
+
+        // exactly these fields, no extras
+        && request.resource.data.keys().hasOnly([
+          'title', 'categoryId', 'org', 'location', 'description', 'url',
+          'startsAt', 'hasTime', 'submissionType', 'submitterUid',
+          'status', 'submittedAt',
+          'rsvpRequired', 'capacity', 'rsvpQuestions'
+        ])
+        && request.resource.data.keys().hasAll([
+          'title', 'categoryId', 'startsAt', 'submissionType',
+          'submitterUid', 'status', 'submittedAt'
+        ])
+
+        // required values
+        && request.resource.data.title is string
+        && request.resource.data.title.size() >= 3
+        && request.resource.data.title.size() <= 100
+        && request.resource.data.categoryId in [
+          'civic', 'direct-service', 'neighborhood',
+          'cause-action', 'local-culture', 'mutual-aid'
+        ]
+        && request.resource.data.startsAt is timestamp
+        && request.resource.data.submissionType in ['hosted', 'found']
+
+        // users can't approve their own submissions
+        && request.resource.data.status == 'pending'
+
+        // timestamp must come from the server, not the device
+        && request.resource.data.submittedAt == request.time
+
+        // size limits on optional text
+        && request.resource.data.org.size() <= 150
+        && request.resource.data.location.size() <= 150
+        && request.resource.data.description.size() <= 1000
+        && request.resource.data.url.size() <= 300
+
+        // RSVP settings: only on hosted events, and within the app's limits
+        && validRsvpSettings(request.resource.data);
+
+      function validRsvpSettings(d) {
+        return !('rsvpRequired' in d) || (
+          d.submissionType == 'hosted'
+          && d.rsvpRequired == true
+          && (!('capacity' in d) || (d.capacity is int && d.capacity >= 1 && d.capacity <= 99999))
+          && d.get('rsvpQuestions', []) is list
+          && d.get('rsvpQuestions', []).size() <= 3
+          && validQuestion(d.get('rsvpQuestions', []), 0)
+          && validQuestion(d.get('rsvpQuestions', []), 1)
+          && validQuestion(d.get('rsvpQuestions', []), 2)
+        );
+      }
+
+      // Rules have no loops, so each of the (at most 3) questions is checked.
+      function validQuestion(qs, i) {
+        return qs.size() <= i || (qs[i] is string && qs[i].size() >= 1 && qs[i].size() <= 120);
+      }
+    }
+
+    // ── RSVPs ──────────────────────────────────────────────────────────────
+    // One document per user per event, id "<uid>_<eventId>".
+    match /rsvps/{rsvpId} {
+
+      // Single reads: the user's own RSVP is checked by its id, so the app can
+      // ask "have I RSVP'd?" before the document exists. The host can read
+      // RSVPs to their own events.
+      allow get: if signedIn() && (
+        rsvpId.matches(request.auth.uid + '_.+')
+        || (resource != null && resource.data.get('hostUid', null) == request.auth.uid)
+      );
+
+      // Queries: "my RSVPs" (where uid == me) or "my guests" (where hostUid == me).
+      allow list: if signedIn() && (
+        resource.data.uid == request.auth.uid
+        || resource.data.get('hostUid', null) == request.auth.uid
+      );
+
+      allow create: if signedIn()
+        && request.resource.data.uid == request.auth.uid
+        && rsvpId == request.auth.uid + '_' + request.resource.data.eventId
+        && validRsvp(request.resource.data)
+        && (
+          // Plan-only RSVP (Legistar, Parks, etc.): nobody else can read it.
+          (!('hostUid' in request.resource.data)
+            && request.resource.data.shareWithOrganizer == false)
+          ||
+          // Hosted RSVP: hostUid must be the event's real host, RSVPs must be
+          // on, and the event's count must go up by one in the same write.
+          (
+            get(eventPath(request.resource.data.eventId)).data.get('rsvpRequired', false) == true
+            && request.resource.data.hostUid
+                 == get(eventPath(request.resource.data.eventId)).data.hostUid
+            && getAfter(eventPath(request.resource.data.eventId)).data.rsvpCount
+                 == get(eventPath(request.resource.data.eventId)).data.get('rsvpCount', 0) + 1
+          )
+        );
+
+      // RSVPs are never edited, only created or cancelled.
+      allow update: if false;
+
+      // The attendee can cancel; the host can clear their guest list (used
+      // when the host deletes their account).
+      allow delete: if signedIn() && (
+        resource.data.uid == request.auth.uid
+        || resource.data.get('hostUid', null) == request.auth.uid
+      );
+
+      function validRsvp(d) {
+        return d.keys().hasOnly([
+            'uid', 'eventId', 'eventTitle', 'categoryId', 'source', 'startsAt',
+            'shareWithOrganizer', 'forwardStatus', 'createdAt',
+            'contact', 'answers', 'consentText', 'hostUid'
+          ])
+          && d.eventId is string && d.eventId.size() <= 200
+          && d.eventTitle is string && d.eventTitle.size() <= 300
+          && d.shareWithOrganizer is bool
+          // only the backend may mark an RSVP 'sent' or 'failed'
+          && d.forwardStatus in ['none', 'queued']
+          && d.createdAt == request.time
+          // contact details only when the user agreed to share them
+          && (d.shareWithOrganizer == ('contact' in d))
+          && (!('contact' in d) || validContact(d.contact))
+          && optString(d, 'consentText', 500)
+          && (!('answers' in d) || (d.answers is list && d.answers.size() <= 3));
+      }
+
+      function validContact(c) {
+        return c is map
+          && c.keys().hasOnly(['givenName', 'familyName', 'email', 'phone', 'postalCode'])
+          && c.givenName is string && c.givenName.size() >= 1 && c.givenName.size() <= 100
+          && c.familyName is string && c.familyName.size() >= 1 && c.familyName.size() <= 100
+          && c.email is string && c.email.size() <= 254
+          && optString(c, 'phone', 30)
+          && optString(c, 'postalCode', 10);
+      }
+    }
+  }
+}

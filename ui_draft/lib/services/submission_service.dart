@@ -22,6 +22,14 @@ class EventSubmission {
   final DateTime startsAt;
   final bool hasTime; // false = date only
 
+  /// Hosted events only: collect RSVPs in the app, optionally capped, with
+  /// up to [maxRsvpQuestions] short-answer questions for attendees.
+  final bool rsvpRequired;
+  final int? capacity;
+  final List<String> rsvpQuestions;
+
+  static const maxRsvpQuestions = 3;
+
   const EventSubmission({
     required this.type,
     required this.title,
@@ -32,10 +40,18 @@ class EventSubmission {
     required this.url,
     required this.startsAt,
     required this.hasTime,
+    this.rsvpRequired = false,
+    this.capacity,
+    this.rsvpQuestions = const [],
   });
 
   /// Field names match the `events` collection, so an approved submission can
   /// be copied over with only the review fields removed.
+  ///
+  /// When approving a hosted event that has `rsvpRequired: true`, reviewers
+  /// must (1) create the event document with the SAME id as the submission,
+  /// (2) copy `submitterUid` into a `hostUid` field, and (3) set
+  /// `rsvpCount: 0`. The host's attendee list looks the event up by that id.
   Map<String, dynamic> toFirestore(String submitterUid) => {
         'title': title,
         'categoryId': categoryId,
@@ -45,6 +61,11 @@ class EventSubmission {
         'url': url,
         'startsAt': Timestamp.fromDate(startsAt),
         'hasTime': hasTime,
+        if (type == SubmissionType.hosted && rsvpRequired) ...{
+          'rsvpRequired': true,
+          if (capacity != null) 'capacity': capacity,
+          'rsvpQuestions': rsvpQuestions,
+        },
         'submissionType': type.name,
         'submitterUid': submitterUid,
         'status': SubmissionStatus.pending.name,
@@ -59,12 +80,18 @@ class MySubmission {
   final String categoryId;
   final DateTime submittedAt;
   final SubmissionStatus status;
+
+  /// True for a hosted event that collects RSVPs in the app. Once approved,
+  /// the host can open its attendee list.
+  final bool collectsRsvps;
+
   const MySubmission({
     required this.id,
     required this.title,
     required this.categoryId,
     required this.submittedAt,
     required this.status,
+    this.collectsRsvps = false,
   });
 }
 
@@ -135,6 +162,7 @@ class SubmissionService {
               (s) => s.name == d['status'],
               orElse: () => SubmissionStatus.pending,
             ),
+            collectsRsvps: d['submissionType'] == SubmissionType.hosted.name && d['rsvpRequired'] == true,
           ));
         } catch (err) {
           debugPrint('SubmissionService: skipping unreadable submission ${doc.id} ($err)');

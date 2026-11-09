@@ -8,12 +8,14 @@ import {
    hasCredentials,
    upsertEvents,
    deleteExpiredEvents,
+   publishApprovedSubmissions,
 } from "./lib/firestore.js";
 import { formatNy } from "./lib/time.js";
 import { fetchLegistar } from "./sources/legistar.js";
 import { fetchMobilize } from "./sources/mobilize.js";
 import { fetchParks } from "./sources/parks.js";
 import { fetchPermits } from "./sources/permits.js";
+import { mapSubmission } from "./sources/submissions.js";
 
 // Optional local .env (Node >= 20.12). Real env vars win; missing file is fine.
 try {
@@ -65,6 +67,7 @@ if (unknown.length || !(days > 0) || !(limit > 0)) {
 const log = (m) => console.log(`[warn] ${m}`);
 const now = new Date();
 const results = []; // { name, status, error, collector, docs, written }
+let submissionsFailed = false;
 
 console.log(
    `${dryRun ? "DRY RUN (nothing is written)" : "SYNC"} at ${formatNy(now)}, window ${days}d`,
@@ -129,6 +132,25 @@ if (dryRun) {
          console.error(`[${r.name}] ${r.error}`);
       }
    }
+   // Approved user submissions. Runs before cleanup, and skips events that
+   // are already over, so cleanup can still remove them.
+   try {
+      const { published, skips } = await publishApprovedSubmissions(
+         client,
+         mapSubmission,
+         now,
+      );
+      console.log(
+         `[submissions] published ${published} approved submission(s), skipped ${skips.length}`,
+      );
+      for (const { reason, ref } of skips) {
+         if (args.verbose || reason !== "past event")
+            console.log(`[submissions]   skipped ${ref}: ${reason}`);
+      }
+   } catch (err) {
+      submissionsFailed = true;
+      console.error(`[submissions] failed: ${err.message}`);
+   }
    try {
       const deleted = await deleteExpiredEvents(client, now);
       console.log(`[cleanup] deleted ${deleted} expired event(s)`);
@@ -157,4 +179,6 @@ for (const r of results) {
 }
 
 // Non-zero exit when a source really failed, so the Actions run goes red.
-process.exit(results.some((r) => r.status === "FAILED") ? 1 : 0);
+process.exit(
+   results.some((r) => r.status === "FAILED") || submissionsFailed ? 1 : 0,
+);

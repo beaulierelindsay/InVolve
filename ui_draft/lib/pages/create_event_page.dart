@@ -1,4 +1,5 @@
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -6,6 +7,7 @@ import '../app_theme.dart';
 import '../models/category.dart';
 import '../services/auth_service.dart';
 import '../services/submission_service.dart';
+import 'attendees_page.dart';
 
 const _errorColor = Color(0xFFB3261E);
 
@@ -122,6 +124,9 @@ class _CreateEventFormState extends State<_CreateEventForm> {
   final _location = TextEditingController();
   final _description = TextEditingController();
   final _link = TextEditingController();
+  final _capacity = TextEditingController();
+  final List<TextEditingController> _questions = [];
+  bool _collectRsvps = false;
 
   SubmissionType _type = SubmissionType.hosted;
   String? _categoryId;
@@ -136,7 +141,7 @@ class _CreateEventFormState extends State<_CreateEventForm> {
   @override
   void dispose() {
     _scroll.dispose();
-    for (final c in [_title, _org, _location, _description, _link]) {
+    for (final c in [_title, _org, _location, _description, _link, _capacity, ..._questions]) {
       c.dispose();
     }
     super.dispose();
@@ -187,13 +192,28 @@ class _CreateEventFormState extends State<_CreateEventForm> {
         url: SubmissionService.normalizeUrl(_link.text) ?? '',
         startsAt: startsAt,
         hasTime: _time != null,
+        rsvpRequired: !_isFound && _collectRsvps,
+        capacity: int.tryParse(_capacity.text.trim()),
+        rsvpQuestions: [
+          for (final q in _questions)
+            if (q.text.trim().isNotEmpty) q.text.trim(),
+        ],
       ));
       if (!mounted) return;
       _resetForm();
       _toast('Thanks! Your event was sent for review.');
     } on StateError {
       if (mounted) _toast('Please sign in to add an event.');
-    } catch (_) {
+    } on FirebaseException catch (e) {
+      debugPrint('CreateEventPage: submit failed: ${e.code} ${e.message}');
+      if (!mounted) return;
+      final message = e.code == 'permission-denied'
+          ? "Your event couldn't be accepted. Please check the details and try again."
+          : "Couldn't send your event. Check your connection and try again.";
+      // Show the real cause while developing; release builds never show it.
+      _toast(kDebugMode ? '$message (${e.code})' : message);
+    } catch (e) {
+      debugPrint('CreateEventPage: submit failed: $e');
       if (mounted) _toast("Couldn't send your event. Check your connection and try again.");
     } finally {
       if (mounted) setState(() => _submitting = false);
@@ -202,10 +222,15 @@ class _CreateEventFormState extends State<_CreateEventForm> {
 
   void _resetForm() {
     _formKey.currentState?.reset();
-    for (final c in [_title, _org, _location, _description, _link]) {
+    for (final c in [_title, _org, _location, _description, _link, _capacity]) {
       c.clear();
     }
+    for (final q in _questions) {
+      q.dispose();
+    }
     setState(() {
+      _questions.clear();
+      _collectRsvps = false;
       _type = SubmissionType.hosted;
       _categoryId = null;
       _date = null;
@@ -445,6 +470,87 @@ class _CreateEventFormState extends State<_CreateEventForm> {
     );
   }
 
+  /// Hosted events only: let attendees RSVP in the app instead of elsewhere.
+  Widget _rsvpSettings() {
+    // A Material (not a colored Container) so the SwitchListTile's background
+    // and ink splashes paint on this card instead of being hidden behind it.
+    return Material(
+      color: AppColors.canvas,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14),
+        side: BorderSide(color: AppColors.border),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(14, 6, 14, 14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SwitchListTile(
+              value: _collectRsvps,
+              onChanged: (v) => setState(() => _collectRsvps = v),
+              contentPadding: EdgeInsets.zero,
+              activeTrackColor: AppColors.forest,
+              title: Text('Collect RSVPs in InVolve',
+                  style: GoogleFonts.outfit(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.ink)),
+              subtitle: Text(
+                "People sign up without leaving the app. You'll see their name, email and answers here once your event is approved.",
+                style: GoogleFonts.outfit(fontSize: 11, height: 1.4, color: AppColors.inkMuted),
+              ),
+            ),
+            if (_collectRsvps) ...[
+              const SizedBox(height: 8),
+              TextFormField(
+                controller: _capacity,
+                keyboardType: TextInputType.number,
+                maxLength: 5,
+                style: GoogleFonts.outfit(fontSize: 14, color: AppColors.ink),
+                decoration: _decoration('Spots available (leave blank for no limit)'),
+                validator: (v) {
+                  final t = v?.trim() ?? '';
+                  if (t.isEmpty) return null;
+                  final n = int.tryParse(t);
+                  return (n == null || n < 1) ? 'Enter a whole number above 0' : null;
+                },
+              ),
+              const SizedBox(height: 6),
+              for (var i = 0; i < _questions.length; i++)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: TextFormField(
+                          controller: _questions[i],
+                          maxLength: 120,
+                          textCapitalization: TextCapitalization.sentences,
+                          style: GoogleFonts.outfit(fontSize: 14, color: AppColors.ink),
+                          decoration: _decoration('Question for attendees, e.g. Any dietary needs?'),
+                          validator: (v) => (v?.trim().isEmpty ?? true) ? 'Write a question or remove it' : null,
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: 'Remove question',
+                        icon: Icon(Icons.close, size: 18, color: AppColors.inkMuted),
+                        onPressed: () => setState(() => _questions.removeAt(i).dispose()),
+                      ),
+                    ],
+                  ),
+                ),
+              if (_questions.length < EventSubmission.maxRsvpQuestions)
+                TextButton.icon(
+                  onPressed: () => setState(() => _questions.add(TextEditingController())),
+                  icon: Icon(Icons.add, size: 16, color: AppColors.forest),
+                  label: Text('Add a question',
+                      style: GoogleFonts.outfit(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.forest)),
+                ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
   // ── Build ─────────────────────────────────────────────────────────────────
 
   @override
@@ -514,6 +620,7 @@ class _CreateEventFormState extends State<_CreateEventForm> {
                       }),
                       optionalNote: _isFound ? null : 'optional',
                     ),
+                    if (!_isFound) _block('RSVPs', _rsvpSettings(), optionalNote: 'optional'),
                     ElevatedButton(
                       onPressed: _submitting ? null : _submit,
                       style: ElevatedButton.styleFrom(
@@ -604,6 +711,18 @@ class _MySubmissionsState extends State<_MySubmissions> {
                             const SizedBox(height: 3),
                             Text('Sent ${loc.formatMediumDate(s.submittedAt)}',
                                 style: GoogleFonts.outfit(fontSize: 11, color: AppColors.inkMuted)),
+                            if (s.collectsRsvps && s.status == SubmissionStatus.approved)
+                              GestureDetector(
+                                onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                                  builder: (_) => AttendeesPage(eventId: s.id, title: s.title),
+                                )),
+                                child: Padding(
+                                  padding: const EdgeInsets.only(top: 6),
+                                  child: Text('View attendees \u2192',
+                                      style: GoogleFonts.outfit(
+                                          fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.forest)),
+                                ),
+                              ),
                           ],
                         ),
                       ),

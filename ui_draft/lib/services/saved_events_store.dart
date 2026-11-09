@@ -66,6 +66,11 @@ class SavedEventsStore extends ChangeNotifier {
         'agenda': [
           for (final a in e.agenda) {'time': a.time, 'title': a.title, 'detail': a.detail},
         ],
+        'hostUid': e.hostUid,
+        'rsvpRequired': e.rsvpRequired,
+        'capacity': e.capacity,
+        'rsvpCount': e.rsvpCount,
+        'rsvpQuestions': e.rsvpQuestions,
       };
  
   static Event _fromJson(Map<String, dynamic> j) => Event(
@@ -89,6 +94,13 @@ class SavedEventsStore extends ChangeNotifier {
               title: a['title'] as String,
               detail: a['detail'] as String,
             ),
+        ],
+        hostUid: j['hostUid'] as String?,
+        rsvpRequired: j['rsvpRequired'] as bool? ?? false,
+        capacity: j['capacity'] as int?,
+        rsvpCount: j['rsvpCount'] as int? ?? 0,
+        rsvpQuestions: [
+          for (final q in (j['rsvpQuestions'] as List? ?? const [])) q as String,
         ],
       );
 }

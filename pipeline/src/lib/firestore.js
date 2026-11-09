@@ -103,3 +103,49 @@ export async function deleteExpiredEvents({ db, Timestamp }, now = new Date()) {
 
    return deleted;
 }
+
+/**
+ * Copies approved submissions into `events` (same document id). Existing
+ * events are merged so the RSVP count is kept; new ones start at rsvpCount 0.
+ * `map` is mapSubmission from sources/submissions.js.
+ * @returns {{published: number, skips: {reason: string, ref: string}[]}}
+ */
+export async function publishApprovedSubmissions(
+   { db, Timestamp },
+   map,
+   now = new Date(),
+) {
+   const snapshot = await db
+      .collection("submissions")
+      .where("status", "==", "approved")
+      .get();
+
+   const skips = [];
+   const docs = [];
+   for (const doc of snapshot.docs) {
+      const out = map(doc.id, doc.data(), now);
+      if (out.skip) skips.push({ reason: out.skip, ref: doc.id });
+      else docs.push(out);
+   }
+
+   let published = 0;
+   for (let i = 0; i < docs.length; i += BATCH_SIZE) {
+      const chunk = docs.slice(i, i + BATCH_SIZE);
+      const refs = chunk.map(({ id }) => db.collection("events").doc(id));
+      const existing = await db.getAll(...refs);
+      const batch = db.batch();
+      chunk.forEach(({ data }, j) => {
+         const payload = {
+            ...data,
+            startsAt: Timestamp.fromDate(data.startsAt),
+            endsAt: Timestamp.fromDate(data.endsAt),
+            expiresAt: Timestamp.fromDate(data.expiresAt),
+         };
+         if (!existing[j].exists) payload.rsvpCount = 0;
+         batch.set(refs[j], payload, { merge: true });
+      });
+      await batch.commit();
+      published += chunk.length;
+   }
+   return { published, skips };
+}
