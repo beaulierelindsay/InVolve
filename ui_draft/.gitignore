@@ -44,3 +44,4 @@ app.*.map.json
 /android/app/profile
 /android/app/release
 legistar.json
+firebase_service_acc.json
