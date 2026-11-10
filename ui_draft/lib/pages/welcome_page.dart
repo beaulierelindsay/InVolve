@@ -18,6 +18,8 @@ class _WelcomePageState extends State<WelcomePage> {
   final _locationController = TextEditingController();
   String _confirmedLocation = PreferencesStore.instance.prefs.locationLabel;
   bool _locationSet = false;
+  bool _locating = false;
+  String? _locationError;
 
   String get _greeting {
     final h = DateTime.now().hour;
@@ -26,21 +28,49 @@ class _WelcomePageState extends State<WelcomePage> {
     return 'Good morning';
   }
 
-  void _confirmLocation() {
-    if (_locationController.text.trim().isNotEmpty) {
+  Future<void> _confirmLocation() async {
+    final label = _locationController.text.trim();
+    if (_locating || label.isEmpty) return;
+    setState(() {
+      _locating = true;
+      _locationError = null;
+    });
+    try {
+      await LocationService.instance.setManualLocation(label);
+      await PreferencesStore.instance.setLocation(label);
+      if (!mounted) return;
       setState(() {
-        _confirmedLocation = _locationController.text.trim();
+        _confirmedLocation = label;
         _locationSet = true;
       });
-      PreferencesStore.instance.setLocation(_confirmedLocation);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _locationError =
+            'Could not find that location. Try a city or ZIP code.';
+      });
+    } finally {
+      if (mounted) setState(() => _locating = false);
     }
   }
 
   Future<void> _useCurrentLocation() async {
-    final position = await LocationService.instance.getUserLocation();
-
-    print('Latitude: ${position.latitude}');
-    print('Longitude: ${position.longitude}');
+    if (_locating) return;
+    setState(() {
+      _locating = true;
+      _locationError = null;
+    });
+    try {
+      await LocationService.instance.getUserLocation();
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _locationError =
+            'Could not get your location. Enter a city or ZIP code below.';
+      });
+    } finally {
+      if (mounted) setState(() => _locating = false);
+    }
   }
 
   @override
@@ -322,7 +352,7 @@ class _WelcomePageState extends State<WelcomePage> {
                     SizedBox(
                       width: double.infinity,
                       child: OutlinedButton.icon(
-                        onPressed: _useCurrentLocation,
+                        onPressed: _locating ? null : _useCurrentLocation,
                         icon: const Icon(Icons.my_location),
                         label: const Text('Use my current location'),
                       ),
@@ -343,15 +373,21 @@ class _WelcomePageState extends State<WelcomePage> {
                         ),
                         const SizedBox(width: 8),
                         ElevatedButton(
-                          onPressed: _confirmLocation,
+                          onPressed: _locating ? null : _confirmLocation,
                           style: ElevatedButton.styleFrom(
                             padding: const EdgeInsets.symmetric(
                                 horizontal: 20, vertical: 14),
                           ),
-                          child: const Text('Set'),
+                          child: Text(_locating ? 'Locating…' : 'Set'),
                         ),
                       ],
                     ),
+                    if (_locationError != null) ...[
+                      const SizedBox(height: 8),
+                      Text(_locationError!,
+                          style: TextStyle(
+                              color: Theme.of(context).colorScheme.error)),
+                    ],
                     if (_locationSet) ...[
                       const SizedBox(height: 12),
                       Container(

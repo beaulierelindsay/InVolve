@@ -10,7 +10,7 @@ import '../services/preferences_store.dart';
 import '../widgets/save_button.dart';
 import 'package:go_router/go_router.dart';
 import '../services/location_service.dart';
-import '../utils/distance.dart';
+import '../utils/event_ranking.dart';
 
 /// Flip to true to develop against placeholder data instead of Firestore.
 const bool _useMockEvents = false;
@@ -254,35 +254,14 @@ class _FeedPageState extends State<FeedPage> {
                 final userLat = LocationService.instance.latitude;
                 final userLng = LocationService.instance.longitude;
 
-                if (userLat != null && userLng != null) {
-                  visible.sort((a, b) {
-                    // Events without coordinates go to the bottom.
-                    final aHasLocation =
-                        a.latitude != null && a.longitude != null;
-                    final bHasLocation =
-                        b.latitude != null && b.longitude != null;
-
-                    if (!aHasLocation && !bHasLocation) return 0;
-                    if (!aHasLocation) return 1;
-                    if (!bHasLocation) return -1;
-
-                    final distanceA = distanceInMiles(
-                      userLat,
-                      userLng,
-                      a.latitude!,
-                      a.longitude!,
-                    );
-
-                    final distanceB = distanceInMiles(
-                      userLat,
-                      userLng,
-                      b.latitude!,
-                      b.longitude!,
-                    );
-
-                    return distanceA.compareTo(distanceB);
-                  });
-                }
+                final now = DateTime.now();
+                visible.sort((a, b) => compareEventsForRanking(
+                      a,
+                      b,
+                      userLatitude: userLat,
+                      userLongitude: userLng,
+                      now: now,
+                    ));
                 final hasQuery = _query.trim().isNotEmpty;
 
                 final stillLoading = !snap.hasData && !snap.hasError;
