@@ -24,6 +24,7 @@ export const PARK = {
   endtime: '12:30 pm',
   location: 'Bartow-Pell Mansion Museum (in Pelham Bay Park)',
   categories: 'Nature | Volunteer | Hiking',
+  coordinates: '40.8786,-73.8110',
 };
 
 export const MOBILIZE = {

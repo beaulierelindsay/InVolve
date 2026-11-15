@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
-import { test } from 'node:test';
+import { existsSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
+import { after, test } from 'node:test';
 import { Collector } from '../src/lib/collector.js';
 import { cleanText, stripMarkdown, truncate, unshout } from '../src/lib/text.js';
 import { nyWallClockToDate, parseClock, parseNyLocalIso } from '../src/lib/time.js';
@@ -10,11 +11,29 @@ import { mapPermit, permitDocId } from '../src/sources/permits.js';
 import { LEGISTAR, MOBILIZE, PARK, PERMIT } from './fixtures.js';
 
 const NOW = new Date('2026-10-12T12:00:00Z');
-const run = (fn, rec, ...rest) => {
+// Mappers may be async (Legistar/Permits geocode), so always await them.
+const run = async (fn, rec, ...rest) => {
   const c = new Collector('t', NOW);
-  fn(rec, c, ...rest);
+  await fn(rec, c, ...rest);
   return c;
 };
+
+// Keep the suite offline and independent of the committed geocode cache: serve one canned
+// geocoder answer (250 Broadway), fail everything else (-> null). geocode() persists hits to
+// geocode-cache.json, so restore that file when the suite finishes.
+const CACHE_FILE = new URL('../src/lib/geocode-cache.json', import.meta.url);
+const cacheBefore = existsSync(CACHE_FILE) ? readFileSync(CACHE_FILE) : null;
+after(() => {
+  if (cacheBefore) writeFileSync(CACHE_FILE, cacheBefore);
+  else if (existsSync(CACHE_FILE)) unlinkSync(CACHE_FILE);
+});
+globalThis.fetch = async (url) => {
+  if (String(url).includes('250%20Broadway')) {
+    return { ok: true, json: async () => ({ features: [{ geometry: { coordinates: [-74.007842, 40.712988] } }] }) };
+  }
+  throw new Error('network disabled in tests');
+};
+const inNyc = (d) => d.latitude > 40.4 && d.latitude < 41.0 && d.longitude > -74.4 && d.longitude < -73.6;
 
 test('NY wall clock -> UTC across DST', () => {
   assert.equal(nyWallClockToDate(2026, 10, 6, 13, 30).toISOString(), '2026-10-06T17:30:00.000Z'); // EDT
@@ -41,9 +60,9 @@ test('text helpers', () => {
   assert.ok(truncate('word '.repeat(300), 100).length <= 100);
 });
 
-test('legistar maps like Event.fromLegistar', () => {
+test('legistar maps like Event.fromLegistar', async () => {
   const c = new Collector('legistar', new Date('2026-10-01T12:00:00Z'));
-  mapLegistar(LEGISTAR, c);
+  await mapLegistar(LEGISTAR, c);
   const [{ id, data }] = c.docs.values();
   assert.equal(id, 'legistar-22615');
   assert.equal(data.categoryId, 'civic');
@@ -52,19 +71,25 @@ test('legistar maps like Event.fromLegistar', () => {
   assert.equal(data.action, 'View agenda');
   assert.equal(data.description, 'VOTE');
   assert.equal(data.url, LEGISTAR.EventInSiteURL);
+  // Legistar has no end time: Collector falls back to the start for endsAt/expiresAt.
+  assert.deepEqual(data.endsAt, data.startsAt);
+  assert.deepEqual(data.expiresAt, data.startsAt);
+  // 250 Broadway is a known place: geocoded (stubbed here) and carried through as coordinates.
+  assert.equal(data.latitude, 40.712988);
+  assert.equal(data.longitude, -74.007842);
 });
 
-test('legistar: fallback description, deferred, missing time', () => {
+test('legistar: fallback description, deferred, missing time', async () => {
   const future = { ...LEGISTAR, EventDate: '2026-10-20T00:00:00', EventComment: null };
-  const ok = run(mapLegistar, future);
+  const ok = await run(mapLegistar, future);
   assert.match([...ok.docs.values()][0].data.description, /^Public meeting of the Subcommittee/);
-  assert.equal(run(mapLegistar, { ...future, EventAgendaStatusName: 'Deferred' }).skips[0].reason, 'deferred (postponed)');
-  assert.equal(run(mapLegistar, { ...future, EventTime: null }).skips[0].reason, 'missing/invalid start time');
-  assert.equal(run(mapLegistar, { ...LEGISTAR }).skips[0].reason, 'past event');
+  assert.equal((await run(mapLegistar, { ...future, EventAgendaStatusName: 'Deferred' })).skips[0].reason, 'deferred (postponed)');
+  assert.equal((await run(mapLegistar, { ...future, EventTime: null })).skips[0].reason, 'missing/invalid start time');
+  assert.equal((await run(mapLegistar, { ...LEGISTAR })).skips[0].reason, 'past event');
 });
 
-test('parks: entities decoded, volunteer => neighborhood, https url', () => {
-  const [{ id, data }] = run(mapParks, PARK).docs.values();
+test('parks: entities decoded, volunteer => neighborhood, https url', async () => {
+  const [{ id, data }] = (await run(mapParks, PARK)).docs.values();
   assert.equal(id, 'parks-2235141');
   assert.equal(data.title, 'NYC Parks’ Pitch In & Pick Up');
   assert.equal(data.categoryId, 'neighborhood');
@@ -72,18 +97,21 @@ test('parks: entities decoded, volunteer => neighborhood, https url', () => {
   assert.equal(data.description, 'Hike with the Rangers. Bring water.');
   assert.match(data.url, /^https:\/\//);
   assert.equal(data.action, undefined);
+  assert.equal(data.endsAt.toISOString(), '2026-10-13T16:30:00.000Z');
+  assert.deepEqual(data.expiresAt, data.endsAt);
+  assert.ok(inNyc(data));
 });
 
-test('parks: cancelled, past, and registration action', () => {
-  assert.equal(run(mapParks, { ...PARK, title: 'CANCELED: Zumba' }).skips[0].reason, 'cancelled');
-  assert.equal(run(mapParks, { ...PARK, startdate: '2026-10-01', enddate: '2026-10-01' }).skips[0].reason, 'past event');
-  const [{ data }] = run(mapParks, { ...PARK, registration_url: 'https://x.y', categories: 'Yoga' }).docs.values();
+test('parks: cancelled, past, and registration action', async () => {
+  assert.equal((await run(mapParks, { ...PARK, title: 'CANCELED: Zumba' })).skips[0].reason, 'cancelled');
+  assert.equal((await run(mapParks, { ...PARK, startdate: '2026-10-01', enddate: '2026-10-01' })).skips[0].reason, 'past event');
+  const [{ data }] = (await run(mapParks, { ...PARK, registration_url: 'https://x.y', categories: 'Yoga' })).docs.values();
   assert.equal(data.action, 'Register');
   assert.equal(data.categoryId, 'local-culture');
 });
 
-test('mobilize: next slot, markdown stripped, location', () => {
-  const [{ id, data }] = run(mapMobilize, MOBILIZE, NOW).docs.values();
+test('mobilize: next slot, markdown stripped, location', async () => {
+  const [{ id, data }] = (await run(mapMobilize, MOBILIZE, NOW)).docs.values();
   assert.equal(id, 'mobilize-1057268');
   assert.equal(data.categoryId, 'cause-action');
   assert.equal(data.startsAt.getTime(), 1792256400 * 1000);
@@ -93,15 +121,15 @@ test('mobilize: next slot, markdown stripped, location', () => {
   assert.equal(data.url, MOBILIZE.browser_url);
 });
 
-test('mobilize: filters and private addresses', () => {
+test('mobilize: filters and private addresses', async () => {
   const nj = { ...MOBILIZE, location: { ...MOBILIZE.location, region: 'NJ', postal_code: '07030' } };
-  assert.equal(run(mapMobilize, nj, NOW).skips[0].reason, 'outside NYC');
-  assert.equal(run(mapMobilize, { ...MOBILIZE, is_virtual: true }, NOW).skips[0].reason, 'virtual / no location');
+  assert.equal((await run(mapMobilize, nj, NOW)).skips[0].reason, 'outside NYC');
+  assert.equal((await run(mapMobilize, { ...MOBILIZE, is_virtual: true }, NOW)).skips[0].reason, 'virtual / no location');
   const priv = { ...MOBILIZE, address_visibility: 'PRIVATE', location: { ...MOBILIZE.location, venue: 'This event’s address is private. Sign up for more details' } };
-  const [{ data }] = run(mapMobilize, priv, NOW).docs.values();
+  const [{ data }] = (await run(mapMobilize, priv, NOW)).docs.values();
   assert.equal(data.location, 'Address shared after sign-up (New York, NY 10001)');
   const noSlots = { ...MOBILIZE, timeslots: [{ start_date: 1, end_date: 2, is_full: false }] };
-  assert.equal(run(mapMobilize, noSlots, NOW).skips[0].reason, 'missing/invalid start time');
+  assert.equal((await run(mapMobilize, noSlots, NOW)).skips[0].reason, 'missing/invalid start time');
 });
 
 test('NYC zip ranges', () => {
@@ -109,14 +137,43 @@ test('NYC zip ranges', () => {
   for (const z of ['07030', '11550', '10601', '11001', '', undefined]) assert.ok(!isNycZip(z), String(z));
 });
 
-test('permits: id includes start (event_id repeats), mapping', () => {
+test('permits: id includes start (event_id repeats), mapping', async () => {
   assert.equal(permitDocId(PERMIT), 'permit-911516-20261013T0800');
-  const [{ data }] = run(mapPermit, PERMIT).docs.values();
+  const [{ data }] = (await run(mapPermit, PERMIT)).docs.values();
   assert.equal(data.categoryId, 'local-culture');
   assert.equal(data.startsAt.toISOString(), '2026-10-13T12:00:00.000Z');
   assert.equal(data.location, 'East 149 Street between Morris Avenue and Park Avenue, Bronx');
   assert.equal(data.url, undefined);
-  assert.equal(run(mapPermit, { ...PERMIT, event_type: 'Special Event' }).skips[0].reason, 'event_type not allowlisted (Special Event)');
+  assert.equal(data.endsAt.toISOString(), '2026-10-13T22:00:00.000Z');
+  assert.deepEqual(data.expiresAt, data.endsAt);
+  // This fixture's address has no geocode result (stub fails -> null): coordinates are omitted, not zeroed.
+  assert.equal(data.latitude, undefined);
+  assert.equal(data.longitude, undefined);
+  assert.equal((await run(mapPermit, { ...PERMIT, event_type: 'Special Event' })).skips[0].reason, 'event_type not allowlisted (Special Event)');
+  // Already ended (by end time, even though it started earlier): skipped before any geocoding.
+  const ended = { ...PERMIT, start_date_time: '2026-10-12T06:00:00.000', end_date_time: '2026-10-12T07:00:00.000' };
+  assert.equal((await run(mapPermit, ended)).skips[0].reason, 'event already ended');
+});
+
+test('collector: end clamped to start, expiresAt = endsAt, NYC-only coordinates', () => {
+  const base = { id: 'x', categoryId: 'civic', title: 't', startsAt: new Date('2026-10-13T15:00:00Z') };
+  const add = (extra) => {
+    const c = new Collector('t', NOW);
+    c.add({ ...base, ...extra });
+    return c.docs.get('x').data;
+  };
+  const noEnd = add({});
+  assert.deepEqual(noEnd.endsAt, base.startsAt);
+  assert.deepEqual(noEnd.expiresAt, base.startsAt);
+  const badEnd = add({ endsAt: new Date('2026-10-13T14:00:00Z') }); // before start
+  assert.deepEqual(badEnd.endsAt, base.startsAt);
+  const good = add({ endsAt: new Date('2026-10-13T17:00:00Z'), latitude: 40.7, longitude: -74.0 });
+  assert.equal(good.endsAt.toISOString(), '2026-10-13T17:00:00.000Z');
+  assert.deepEqual(good.expiresAt, good.endsAt);
+  assert.equal(good.latitude, 40.7);
+  const far = add({ latitude: 34.0, longitude: -118.2 }); // outside NYC
+  assert.equal(far.latitude, undefined);
+  assert.equal(far.longitude, undefined);
 });
 
 test('upsertEvents uses set(merge) with Timestamps, in batches', async () => {
@@ -133,7 +190,13 @@ test('upsertEvents uses set(merge) with Timestamps, in batches', async () => {
   const Timestamp = { fromDate: (d) => ({ ts: d.toISOString() }) };
   const docs = Array.from({ length: 850 }, (_, i) => ({
     id: `parks-${i}`,
-    data: { categoryId: 'local-culture', title: 't', startsAt: new Date('2026-10-13T15:00:00Z') },
+    data: {
+      categoryId: 'local-culture',
+      title: 't',
+      startsAt: new Date('2026-10-13T15:00:00Z'),
+      endsAt: new Date('2026-10-13T16:30:00Z'),
+      expiresAt: new Date('2026-10-13T16:30:00Z'),
+    },
   }));
   const written = await upsertEvents({ db, Timestamp }, docs);
   assert.equal(written, 850);
@@ -141,6 +204,8 @@ test('upsertEvents uses set(merge) with Timestamps, in batches', async () => {
   assert.deepEqual(calls[0].opts, { merge: true });
   assert.equal(calls[0].ref.name, 'events');
   assert.deepEqual(calls[0].data.startsAt, { ts: '2026-10-13T15:00:00.000Z' });
+  assert.deepEqual(calls[0].data.endsAt, { ts: '2026-10-13T16:30:00.000Z' });
+  assert.deepEqual(calls[0].data.expiresAt, { ts: '2026-10-13T16:30:00.000Z' });
 });
 
 test('getDb rejects missing / malformed credentials without touching the network', async () => {
