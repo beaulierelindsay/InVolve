@@ -61,8 +61,31 @@ export function mapParks(e, collector) {
    });
 }
 
+const DIAG_HEADERS = [
+   "server", "via", "x-cache", "x-amz-cf-id", "x-amz-cf-pop",
+   "content-type", "allow", "location",
+];
+
+/** Temporary diagnostics for the Parks 405 seen only on GitHub Actions. Logs on non-OK responses only. */
+async function logParksHttpError(res, { attempt, url }) {
+   const headers = Object.fromEntries(
+      DIAG_HEADERS.filter((h) => res.headers.has(h)).map((h) => [h, res.headers.get(h)]),
+   );
+   let body = "";
+   try {
+      body = (await res.text()).slice(0, 500).replace(/\s+/g, " ").trim();
+   } catch (err) {
+      body = `<unreadable: ${err.message}>`;
+   }
+   console.error(
+      `[parks-diag] attempt=${attempt + 1} status=${res.status} statusText=${JSON.stringify(res.statusText)} ` +
+         `requested=${url} finalUrl=${res.url ? new URL(res.url).origin + new URL(res.url).pathname : ""} ` +
+         `redirected=${res.redirected}\n[parks-diag] headers=${JSON.stringify(headers)}\n[parks-diag] body=${JSON.stringify(body)}`,
+   );
+}
+
 export async function fetchParks({ now }) {
-   const items = await fetchJson(URL_);
+   const items = await fetchJson(URL_, { onHttpError: logParksHttpError });
    if (!Array.isArray(items)) throw new Error("Parks: expected a JSON array");
    const c = new Collector("parks", now);
    for (const e of items) mapParks(e, c);

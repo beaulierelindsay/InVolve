@@ -11,7 +11,7 @@ export function redact(url) {
  * GET JSON with a timeout and retries on 429 / 5xx / network errors.
  * Errors name the URL without its query string (Legistar's token is in it).
  */
-export async function fetchJson(url, { retries = 3, timeoutMs = 60_000, headers = {} } = {}) {
+export async function fetchJson(url, { retries = 3, timeoutMs = 60_000, headers = {}, onHttpError } = {}) {
   const where = redact(url);
   let lastErr;
   for (let attempt = 0; attempt <= retries; attempt++) {
@@ -21,6 +21,9 @@ export async function fetchJson(url, { retries = 3, timeoutMs = 60_000, headers 
         signal: AbortSignal.timeout(timeoutMs),
       });
       if (res.ok) return await res.json();
+      if (onHttpError) {
+        try { await onHttpError(res, { attempt, url: where }); } catch { /* diagnostics must never change behavior */ }
+      }
       lastErr = new Error(`${where}: HTTP ${res.status} ${res.statusText}`.trim());
       lastErr.status = res.status;
       if (res.status !== 429 && res.status < 500) throw lastErr; // not retryable
