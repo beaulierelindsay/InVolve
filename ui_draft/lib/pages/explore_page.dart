@@ -1,13 +1,162 @@
-import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
-import '../app_theme.dart';
-import '../services/preferences_store.dart';
+import 'dart:async';
+import 'dart:math' show Point;
 
-class ExplorePage extends StatelessWidget {
+import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
+import 'package:google_fonts/google_fonts.dart';
+import 'package:maplibre_gl/maplibre_gl.dart';
+import '../app_theme.dart';
+import '../models/events.dart';
+import '../services/event_service.dart';
+import '../services/location_service.dart';
+import '../services/preferences_store.dart';
+import '../utils/coordinates.dart';
+
+const _nycCenter = LatLng(40.7128, -74.0060);
+const _nycZoom = 10.5;
+const _nearUserZoom = 12.5;
+
+class ExplorePage extends StatefulWidget {
   const ExplorePage({super.key});
 
   @override
+  State<ExplorePage> createState() => _ExplorePageState();
+}
+
+class _ExplorePageState extends State<ExplorePage> {
+  MapLibreMapController? _controller;
+  StreamSubscription<List<Event>>? _subscription;
+  List<Event> _events = const [];
+  final Map<String, Event> _eventByCircleId = {};
+  Event? _selected;
+  bool _styleLoaded = false;
+  bool _syncing = false;
+  bool _syncAgain = false;
+  Object? _loadError;
+
+  late final CameraPosition _initialCamera = _initialCameraPosition();
+
+  CameraPosition _initialCameraPosition() {
+    final lat = LocationService.instance.latitude;
+    final lng = LocationService.instance.longitude;
+    if (hasValidCoordinates(lat, lng)) {
+      return CameraPosition(target: LatLng(lat!, lng!), zoom: _nearUserZoom);
+    }
+    return const CameraPosition(target: _nycCenter, zoom: _nycZoom);
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    PreferencesStore.instance.addListener(_onPrefsChanged);
+    _subscription = EventService().watchEvents().listen(
+      (events) {
+        _events = events;
+        _loadError = null;
+        if (mounted) setState(() {});
+        _syncMarkers();
+      },
+      onError: (Object error) {
+        if (mounted) setState(() => _loadError = error);
+      },
+    );
+  }
+
+  @override
+  void dispose() {
+    PreferencesStore.instance.removeListener(_onPrefsChanged);
+    _subscription?.cancel();
+    _controller?.onCircleTapped.remove(_onCircleTapped);
+    super.dispose();
+  }
+
+  List<Event> get _mappableEvents {
+    final prefs = PreferencesStore.instance.prefs;
+    return _events
+        .where((e) => hasValidCoordinates(e.latitude, e.longitude))
+        .where((e) =>
+            !prefs.hasInterests || prefs.categoryIds.contains(e.categoryId))
+        .toList();
+  }
+
+  void _onPrefsChanged() {
+    if (mounted) setState(() {});
+    _syncMarkers();
+  }
+
+  void _onMapCreated(MapLibreMapController controller) {
+    _controller = controller;
+    controller.onCircleTapped.add(_onCircleTapped);
+  }
+
+  void _onStyleLoaded() {
+    _styleLoaded = true;
+    _syncMarkers();
+  }
+
+  Future<void> _syncMarkers() async {
+    final controller = _controller;
+    if (controller == null || !_styleLoaded) return;
+    if (_syncing) {
+      _syncAgain = true;
+      return;
+    }
+    _syncing = true;
+    try {
+      do {
+        _syncAgain = false;
+        final events = _mappableEvents;
+        await controller.clearCircles();
+        _eventByCircleId.clear();
+        if (events.isEmpty) continue;
+        final circles = await controller.addCircles(
+          [
+            for (final e in events)
+              CircleOptions(
+                geometry: LatLng(e.latitude!, e.longitude!),
+                circleRadius: 9,
+                circleColor: _hex(e.category.color),
+                circleStrokeColor: '#FFFFFF',
+                circleStrokeWidth: 2.5,
+              ),
+          ],
+          [
+            for (final e in events) {'eventId': e.id}
+          ],
+        );
+        for (var i = 0; i < circles.length; i++) {
+          _eventByCircleId[circles[i].id] = events[i];
+        }
+        final selected = _selected;
+        if (selected != null && mounted) {
+          final stillThere = events.where((e) => e.id == selected.id);
+          setState(
+              () => _selected = stillThere.isEmpty ? null : stillThere.first);
+        }
+      } while (_syncAgain);
+    } catch (_) {
+    } finally {
+      _syncing = false;
+    }
+  }
+
+  void _onCircleTapped(Circle circle) {
+    final event = _eventByCircleId[circle.id];
+    if (event != null && mounted) setState(() => _selected = event);
+  }
+
+  static String _hex(Color c) {
+    final rgb = c.toARGB32() & 0xFFFFFF;
+    return '#${rgb.toRadixString(16).padLeft(6, '0')}';
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final count = _mappableEvents.length;
+    final chipText = _loadError != null
+        ? "Couldn't load events"
+        : '$count ${count == 1 ? 'event' : 'events'} on the map';
+
     return Scaffold(
       backgroundColor: AppColors.ground,
       body: Column(
@@ -15,19 +164,33 @@ class ExplorePage extends StatelessWidget {
           // Header
           Container(
             color: AppColors.canvas,
-            padding: EdgeInsets.fromLTRB(24, MediaQuery.of(context).padding.top + 16, 24, 16),
+            padding: EdgeInsets.fromLTRB(
+                24, MediaQuery.of(context).padding.top + 16, 24, 16),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(PreferencesStore.instance.prefs.displayLocation.toUpperCase(),
-                    style: GoogleFonts.outfit(fontSize: 10, fontWeight: FontWeight.w600, letterSpacing: 1.4, color: AppColors.amber)),
+                Text(
+                    PreferencesStore.instance.prefs.displayLocation
+                        .toUpperCase(),
+                    style: GoogleFonts.outfit(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: 1.4,
+                        color: AppColors.amber)),
                 const SizedBox(height: 4),
                 RichText(
                   text: TextSpan(
-                    style: GoogleFonts.fraunces(fontSize: 24, fontWeight: FontWeight.w300, color: AppColors.ink),
+                    style: GoogleFonts.fraunces(
+                        fontSize: 24,
+                        fontWeight: FontWeight.w300,
+                        color: AppColors.ink),
                     children: const [
                       TextSpan(text: 'Explore the '),
-                      TextSpan(text: 'map', style: TextStyle(fontStyle: FontStyle.italic, fontWeight: FontWeight.w400)),
+                      TextSpan(
+                          text: 'map',
+                          style: TextStyle(
+                              fontStyle: FontStyle.italic,
+                              fontWeight: FontWeight.w400)),
                     ],
                   ),
                 ),
@@ -40,43 +203,18 @@ class ExplorePage extends StatelessWidget {
           Expanded(
             child: Stack(
               children: [
-                // Map placeholder
-                Container(
-                  color: AppColors.forestLight,
-                  child: Stack(
-                    children: [
-                      CustomPaint(
-                        size: Size.infinite,
-                        painter: _ExploreMapPainter(),
-                      ),
-                      Center(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Container(
-                              width: 58,
-                              height: 58,
-                              decoration: BoxDecoration(
-                                color: AppColors.forest,
-                                borderRadius: BorderRadius.circular(18),
-                                boxShadow: [BoxShadow(color: AppColors.forest.withValues(alpha: 0.3), blurRadius: 16, offset: const Offset(0, 6))],
-                              ),
-                              child: const Icon(Icons.location_on, color: Colors.white, size: 32),
-                            ),
-                            const SizedBox(height: 14),
-                            Text('Live map coming soon',
-                                style: GoogleFonts.outfit(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.forest)),
-                            const SizedBox(height: 6),
-                            Text(
-                              'Add google_maps_flutter to pubspec\nand configure your API key',
-                              style: GoogleFonts.outfit(fontSize: 11, color: AppColors.inkMuted, height: 1.5),
-                              textAlign: TextAlign.center,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
+                MapLibreMap(
+                  styleString: MapLibreStyles.openfreemapLiberty,
+                  initialCameraPosition: _initialCamera,
+                  onMapCreated: _onMapCreated,
+                  onStyleLoadedCallback: _onStyleLoaded,
+                  onMapClick: (point, latLng) {
+                    if (_selected != null) setState(() => _selected = null);
+                  },
+                  attributionEnabled: true,
+                  attributionButtonPosition: AttributionButtonPosition.topRight,
+                  attributionButtonMargins: const Point(8, 8),
+                  compassEnabled: false,
                 ),
 
                 // Floating chip
@@ -86,25 +224,51 @@ class ExplorePage extends StatelessWidget {
                   right: 0,
                   child: Center(
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 8),
                       decoration: BoxDecoration(
                         color: AppColors.canvas,
                         borderRadius: BorderRadius.circular(20),
                         border: Border.all(color: AppColors.border),
-                        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 8)],
+                        boxShadow: [
+                          BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.06),
+                              blurRadius: 8)
+                        ],
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Container(width: 8, height: 8, decoration: BoxDecoration(color: AppColors.amber, shape: BoxShape.circle)),
+                          Container(
+                              width: 8,
+                              height: 8,
+                              decoration: BoxDecoration(
+                                  color: AppColors.amber,
+                                  shape: BoxShape.circle)),
                           const SizedBox(width: 8),
-                          Text('12 events in this area',
-                              style: GoogleFonts.outfit(fontSize: 12, fontWeight: FontWeight.w500, color: AppColors.ink)),
+                          Text(chipText,
+                              style: GoogleFonts.outfit(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w500,
+                                  color: AppColors.ink)),
                         ],
                       ),
                     ),
                   ),
                 ),
+
+                if (_selected != null)
+                  Positioned(
+                    left: 16,
+                    right: 16,
+                    bottom: 16,
+                    child: _EventPreview(
+                      event: _selected!,
+                      onClose: () => setState(() => _selected = null),
+                      onOpen: () =>
+                          context.push('/feed/event', extra: _selected),
+                    ),
+                  ),
               ],
             ),
           ),
@@ -114,39 +278,82 @@ class ExplorePage extends StatelessWidget {
   }
 }
 
-class _ExploreMapPainter extends CustomPainter {
+class _EventPreview extends StatelessWidget {
+  final Event event;
+  final VoidCallback onClose;
+  final VoidCallback onOpen;
+  const _EventPreview(
+      {required this.event, required this.onClose, required this.onOpen});
+
   @override
-  void paint(Canvas canvas, Size size) {
-    final gridPaint = Paint()
-      ..color = const Color(0xFF1B4D3E).withValues(alpha: 0.1)
-      ..strokeWidth = 1;
-
-    for (int i = 0; i < 12; i++) {
-      final y = i * size.height / 11;
-      canvas.drawLine(Offset(0, y), Offset(size.width, y), gridPaint);
-    }
-    for (int i = 0; i < 16; i++) {
-      final x = i * size.width / 15;
-      canvas.drawLine(Offset(x, 0), Offset(x, size.height), gridPaint);
-    }
-
-    final blockPaint = Paint()..color = const Color(0xFF1B4D3E).withValues(alpha: 0.15);
-    final rr = const Radius.circular(6);
-    canvas.drawRRect(RRect.fromLTRBR(30, 40, 140, 110, rr), blockPaint);
-    canvas.drawRRect(RRect.fromLTRBR(160, 30, 280, 80, rr), blockPaint..color = const Color(0xFF1B4D3E).withValues(alpha: 0.10));
-    canvas.drawRRect(RRect.fromLTRBR(300, 50, 420, 130, rr), blockPaint..color = const Color(0xFF1B4D3E).withValues(alpha: 0.13));
-    canvas.drawRRect(RRect.fromLTRBR(30, 130, 100, 240, rr), blockPaint..color = const Color(0xFF1B4D3E).withValues(alpha: 0.11));
-    canvas.drawRRect(RRect.fromLTRBR(120, 100, 270, 180, rr), blockPaint..color = const Color(0xFF1B4D3E).withValues(alpha: 0.08));
-    canvas.drawRRect(RRect.fromLTRBR(290, 150, 390, 210, rr), blockPaint..color = const Color(0xFF1B4D3E).withValues(alpha: 0.12));
-
-    final roadPaint = Paint()
-      ..color = const Color(0xFF2D6A55).withValues(alpha: 0.3)
-      ..strokeWidth = 3
-      ..strokeCap = StrokeCap.round;
-    canvas.drawLine(Offset(0, size.height * 0.55), Offset(size.width, size.height * 0.55), roadPaint);
-    canvas.drawLine(Offset(size.width * 0.45, 0), Offset(size.width * 0.45, size.height), roadPaint);
+  Widget build(BuildContext context) {
+    final location = event.location?.trim() ?? '';
+    final date = event.date.trim();
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 14, 8, 14),
+      decoration: BoxDecoration(
+        color: AppColors.canvas,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.border),
+        boxShadow: [
+          BoxShadow(
+              color: Colors.black.withValues(alpha: 0.12),
+              blurRadius: 16,
+              offset: const Offset(0, 4))
+        ],
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(event.title,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.fraunces(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w400,
+                        color: AppColors.ink)),
+                if (date.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(date,
+                      style: GoogleFonts.outfit(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                          color: AppColors.amber)),
+                ],
+                if (location.isNotEmpty) ...[
+                  const SizedBox(height: 2),
+                  Text(location,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.outfit(
+                          fontSize: 12, color: AppColors.inkMuted)),
+                ],
+                const SizedBox(height: 10),
+                FilledButton(
+                  onPressed: onOpen,
+                  style: FilledButton.styleFrom(
+                    backgroundColor: AppColors.forest,
+                    foregroundColor: Colors.white,
+                    textStyle: GoogleFonts.outfit(
+                        fontSize: 13, fontWeight: FontWeight.w600),
+                  ),
+                  child: const Text('View details'),
+                ),
+              ],
+            ),
+          ),
+          IconButton(
+            onPressed: onClose,
+            icon: Icon(Icons.close, size: 18, color: AppColors.inkMuted),
+            tooltip: 'Close',
+          ),
+        ],
+      ),
+    );
   }
-
-  @override
-  bool shouldRepaint(_) => false;
 }
