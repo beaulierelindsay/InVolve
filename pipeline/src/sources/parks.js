@@ -1,5 +1,3 @@
-// NYC Parks public events. Data dictionary: https://data.cityofnewyork.us/d/w3wp-dpdi
-// Feed: one JSON array, ~2 weeks of events, one element per occurrence.
 import { Collector } from "../lib/collector.js";
 import { fetchJson } from "../lib/http.js";
 import { cleanText, truncate } from "../lib/text.js";
@@ -55,13 +53,22 @@ export function mapParks(e, collector) {
 }
 
 const DIAG_HEADERS = [
-   "server", "via", "x-cache", "x-amz-cf-id", "x-amz-cf-pop",
-   "content-type", "allow", "location",
+   "server",
+   "via",
+   "x-cache",
+   "x-amz-cf-id",
+   "x-amz-cf-pop",
+   "content-type",
+   "allow",
+   "location",
 ];
 
 async function logParksHttpError(res, { attempt, url }) {
    const headers = Object.fromEntries(
-      DIAG_HEADERS.filter((h) => res.headers.has(h)).map((h) => [h, res.headers.get(h)]),
+      DIAG_HEADERS.filter((h) => res.headers.has(h)).map((h) => [
+         h,
+         res.headers.get(h),
+      ]),
    );
    let body = "";
    try {
