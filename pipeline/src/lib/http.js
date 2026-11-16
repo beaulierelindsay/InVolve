@@ -22,7 +22,7 @@ export async function fetchJson(url, { retries = 3, timeoutMs = 60_000, headers 
       });
       if (res.ok) return await res.json();
       if (onHttpError) {
-        try { await onHttpError(res, { attempt, url: where }); } catch { /* diagnostics must never change behavior */ }
+        try { await onHttpError(res, { attempt, url: where }); } catch {}
       }
       lastErr = new Error(`${where}: HTTP ${res.status} ${res.statusText}`.trim());
       lastErr.status = res.status;

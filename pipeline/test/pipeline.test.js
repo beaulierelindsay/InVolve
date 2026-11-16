@@ -92,22 +92,52 @@ test('parks: entities decoded, volunteer => neighborhood, https url', async () =
   const [{ id, data }] = (await run(mapParks, PARK)).docs.values();
   assert.equal(id, 'parks-2235141');
   assert.equal(data.title, 'NYC Parks’ Pitch In & Pick Up');
+  assert.equal(data.org, 'NYC Parks');
   assert.equal(data.categoryId, 'neighborhood');
+  assert.equal(data.location, 'Bartow-Pell Mansion Museum (in Pelham Bay Park)');
   assert.equal(data.startsAt.toISOString(), '2026-10-13T15:00:00.000Z');
-  assert.equal(data.description, 'Hike with the Rangers. Bring water.');
-  assert.match(data.url, /^https:\/\//);
-  assert.equal(data.action, undefined);
   assert.equal(data.endsAt.toISOString(), '2026-10-13T16:30:00.000Z');
   assert.deepEqual(data.expiresAt, data.endsAt);
-  assert.ok(inNyc(data));
+  assert.equal(data.description, 'Hike with the Rangers. Bring water.');
+  assert.equal(data.url, 'https://www.nycgovparks.org/events/2026/10/13/pitch-in');
+  assert.equal(data.action, undefined);
+  assert.equal(data.latitude, 40.87860095);
+  assert.equal(data.longitude, -73.81100043);
 });
 
 test('parks: cancelled, past, and registration action', async () => {
   assert.equal((await run(mapParks, { ...PARK, title: 'CANCELED: Zumba' })).skips[0].reason, 'cancelled');
-  assert.equal((await run(mapParks, { ...PARK, startdate: '2026-10-01', enddate: '2026-10-01' })).skips[0].reason, 'past event');
-  const [{ data }] = (await run(mapParks, { ...PARK, registration_url: 'https://x.y', categories: 'Yoga' })).docs.values();
+  const past = { ...PARK, starttime: '2026-10-01T11:00:00.000', endtime: '2026-10-01T12:30:00.000' };
+  assert.equal((await run(mapParks, past)).skips[0].reason, 'past event');
+  const reg = { ...PARK, registration_url: { url: 'https://x.y/register' }, categories: 'Yoga' };
+  const [{ data }] = (await run(mapParks, reg)).docs.values();
   assert.equal(data.action, 'Register');
   assert.equal(data.categoryId, 'local-culture');
+  const [{ data: none }] = (await run(mapParks, { ...PARK, registration_url: null })).docs.values();
+  assert.equal(none.action, undefined);
+});
+
+test('parks: coordinates parsing, missing or invalid coordinates keep the event', async () => {
+  for (const coordinates of [undefined, null, '', 'not, numbers', '0.0, 0.0', '34.0, -118.2']) {
+    const c = await run(mapParks, { ...PARK, coordinates });
+    assert.equal(c.docs.size, 1, String(coordinates));
+    const [{ data }] = c.docs.values();
+    assert.equal(data.latitude, undefined, String(coordinates));
+    assert.equal(data.longitude, undefined, String(coordinates));
+  }
+  const multi = { ...PARK, coordinates: '40.7500, -73.9900; 40.8000, -73.9500' };
+  const [{ data }] = (await run(mapParks, multi)).docs.values();
+  assert.equal(data.latitude, 40.75);
+  assert.equal(data.longitude, -73.99);
+});
+
+test('parks: missing start time is skipped, missing end falls back to start, missing link and location', async () => {
+  assert.equal((await run(mapParks, { ...PARK, starttime: undefined })).skips[0].reason, 'missing/invalid start time');
+  const [{ data }] = (await run(mapParks, { ...PARK, endtime: undefined, link: undefined, location: '' })).docs.values();
+  assert.deepEqual(data.endsAt, data.startsAt);
+  assert.deepEqual(data.expiresAt, data.startsAt);
+  assert.equal(data.url, undefined);
+  assert.equal(data.location, 'Pelham Bay Park');
 });
 
 test('mobilize: next slot, markdown stripped, location', async () => {

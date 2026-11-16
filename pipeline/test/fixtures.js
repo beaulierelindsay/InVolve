@@ -14,17 +14,15 @@ export const LEGISTAR = {
 export const PARK = {
   title: 'NYC Parks&#8217; Pitch In &amp; Pick Up',
   guid: '2235141',
-  link: 'http://www.nycgovparks.org/events/2026/10/13/pitch-in',
+  link: { url: 'http://www.nycgovparks.org/events/2026/10/13/pitch-in' },
   description: '&nbsp;Hike with the Rangers.&nbsp;Bring water.',
-  registration_url: null,
+  parkids: 'X092',
   parknames: 'Pelham Bay Park',
-  startdate: '2026-10-13',
-  enddate: '2026-10-13',
-  starttime: '11:00 am',
-  endtime: '12:30 pm',
+  starttime: '2026-10-13T11:00:00.000',
+  endtime: '2026-10-13T12:30:00.000',
   location: 'Bartow-Pell Mansion Museum (in Pelham Bay Park)',
   categories: 'Nature | Volunteer | Hiking',
-  coordinates: '40.8786,-73.8110',
+  coordinates: '40.87860095000000000, -73.81100043000000000',
 };
 
 export const MOBILIZE = {

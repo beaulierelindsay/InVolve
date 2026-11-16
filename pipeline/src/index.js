@@ -28,6 +28,8 @@ const SOURCES = {
    permits: fetchPermits,
 };
 
+const NON_FATAL_FETCH = new Set(["parks"]);
+
 const { values: args } = parseArgs({
    options: {
       "dry-run": { type: "boolean", default: false },
@@ -89,6 +91,7 @@ for (const name of names) {
       r.status =
          err instanceof ConfigError && dryRun ? "not configured" : "FAILED";
       r.error = err.message;
+      r.nonFatal = r.status === "FAILED" && NON_FATAL_FETCH.has(name);
       console.error(`[${name}] ${r.status}: ${err.message}`);
    }
 }
@@ -125,6 +128,7 @@ if (dryRun) {
          r.written = await upsertEvents(client, r.docs);
       } catch (err) {
          r.status = "FAILED";
+         r.nonFatal = false;
          r.error = `write failed: ${err.message}`;
          console.error(`[${r.name}] ${r.error}`);
       }
@@ -156,5 +160,10 @@ for (const r of results) {
    }
 }
 
-// Non-zero exit when a source really failed, so the Actions run goes red.
-process.exit(results.some((r) => r.status === "FAILED") ? 1 : 0);
+const failed = results.filter((r) => r.status === "FAILED");
+for (const r of failed.filter((r) => r.nonFatal)) {
+   console.error(
+      `[warn] ${r.name} FAILED (non-fatal by design, other sources were still synced): ${r.error}`,
+   );
+}
+process.exit(failed.some((r) => !r.nonFatal) ? 1 : 0);

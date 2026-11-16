@@ -3,22 +3,15 @@
 import { Collector } from "../lib/collector.js";
 import { fetchJson } from "../lib/http.js";
 import { cleanText, truncate } from "../lib/text.js";
-import { nyWallClockToDate, parseClock } from "../lib/time.js";
+import { parseNyLocalIso } from "../lib/time.js";
 
-const URL_ = "https://www.nycgovparks.org/xml/events_300_rss.json";
+const ENDPOINT = "https://data.cityofnewyork.us/resource/w3wp-dpdi.json";
 
 /** Parks' own "Volunteer" tag = stewardship work (cleanups, plantings). Everything else is programming. */
 function categoryFor(categories) {
    return /(^|\|)\s*Volunteer\s*(\||$)/i.test(categories ?? "")
       ? "neighborhood"
       : "local-culture";
-}
-
-function toDate(dateStr, clockStr) {
-   const d = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr ?? "");
-   const t = parseClock(clockStr);
-   if (!d || !t) return null;
-   return nyWallClockToDate(+d[1], +d[2], +d[3], t.h, t.m);
 }
 
 export function mapParks(e, collector) {
@@ -39,8 +32,8 @@ export function mapParks(e, collector) {
       (tags.length
          ? `Free NYC Parks event: ${tags.join(", ")}.`
          : "Free NYC Parks event.");
-   const link = e.link
-      ? String(e.link).replace(/^http:\/\//, "https://")
+   const link = e.link?.url
+      ? String(e.link.url).replace(/^http:\/\//, "https://")
       : undefined;
    const [lat, lng] = String(e.coordinates ?? "")
       .split(",")
@@ -52,9 +45,9 @@ export function mapParks(e, collector) {
       org: "NYC Parks",
       location: cleanText(e.location) || cleanText(e.parknames),
       description: truncate(description, 600),
-      startsAt: toDate(e.startdate, e.starttime),
-      endsAt: toDate(e.enddate || e.startdate, e.endtime),
-      action: e.registration_url ? "Register" : undefined,
+      startsAt: parseNyLocalIso(e.starttime),
+      endsAt: parseNyLocalIso(e.endtime),
+      action: e.registration_url?.url ? "Register" : undefined,
       url: link,
       latitude: lat,
       longitude: lng,
@@ -66,7 +59,6 @@ const DIAG_HEADERS = [
    "content-type", "allow", "location",
 ];
 
-/** Temporary diagnostics for the Parks 405 seen only on GitHub Actions. Logs on non-OK responses only. */
 async function logParksHttpError(res, { attempt, url }) {
    const headers = Object.fromEntries(
       DIAG_HEADERS.filter((h) => res.headers.has(h)).map((h) => [h, res.headers.get(h)]),
@@ -85,7 +77,11 @@ async function logParksHttpError(res, { attempt, url }) {
 }
 
 export async function fetchParks({ now }) {
-   const items = await fetchJson(URL_, { onHttpError: logParksHttpError });
+   const url = new URL(ENDPOINT);
+   url.searchParams.set("$limit", "5000");
+   const items = await fetchJson(url.toString(), {
+      onHttpError: logParksHttpError,
+   });
    if (!Array.isArray(items)) throw new Error("Parks: expected a JSON array");
    const c = new Collector("parks", now);
    for (const e of items) mapParks(e, c);

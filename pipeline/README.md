@@ -56,6 +56,7 @@ commit keys or tokens; `.env` and service-account JSON files are gitignored.
 dispatch (with an optional dry-run checkbox). GitHub only runs scheduled
 workflows from the default branch, so it starts firing once merged to `main`.
 The job fails if any source fails or a write fails; other sources still run.
+Exception: a Parks *fetch* failure is reported as `FAILED` but does not fail the job (`NON_FATAL_FETCH` in `src/index.js`). It was added because the old nycgovparks.org feed was blocked on GitHub-hosted runners by an AWS WAF / CloudFront "Human Verification" page. Parks now reads the NYC Open Data dataset `w3wp-dpdi`; remove the exception once that has run cleanly on Actions.
 
 ## Behavior to know about
 
