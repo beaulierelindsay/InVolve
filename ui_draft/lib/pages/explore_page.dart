@@ -10,11 +10,22 @@ import '../models/events.dart';
 import '../services/event_service.dart';
 import '../services/location_service.dart';
 import '../services/preferences_store.dart';
+import '../services/saved_events_store.dart';
 import '../utils/coordinates.dart';
+import '../utils/distance.dart';
 
 const _nycCenter = LatLng(40.7128, -74.0060);
 const _nycZoom = 10.5;
 const _nearUserZoom = 12.5;
+// Events farther than this from the user are left off the map.
+const _nearbyRadiusMiles = 25.0;
+
+const _userDotColor = '#757575'; // gray
+const _otherEventColor = '#5B3A8C'; // purple: nearby, not for you
+const _forYouColor = '#1B4D3E'; // forest green: matches your interests
+const _goingColor = '#1A5C8C'; // blue: you signed up / saved
+
+enum _Kind { other, forYou, going }
 
 class ExplorePage extends StatefulWidget {
   const ExplorePage({super.key});
@@ -49,6 +60,7 @@ class _ExplorePageState extends State<ExplorePage> {
   void initState() {
     super.initState();
     PreferencesStore.instance.addListener(_onPrefsChanged);
+    SavedEventsStore.instance.addListener(_onPrefsChanged);
     _subscription = EventService().watchEvents().listen(
       (events) {
         _events = events;
@@ -65,19 +77,41 @@ class _ExplorePageState extends State<ExplorePage> {
   @override
   void dispose() {
     PreferencesStore.instance.removeListener(_onPrefsChanged);
+    SavedEventsStore.instance.removeListener(_onPrefsChanged);
     _subscription?.cancel();
     _controller?.onCircleTapped.remove(_onCircleTapped);
     super.dispose();
   }
 
+  /// All events with coordinates that are near the user (or all of them when
+  /// the user's location is unknown).
   List<Event> get _mappableEvents {
-    final prefs = PreferencesStore.instance.prefs;
+    final lat = LocationService.instance.latitude;
+    final lng = LocationService.instance.longitude;
+    final hasUser = hasValidCoordinates(lat, lng);
     return _events
         .where((e) => hasValidCoordinates(e.latitude, e.longitude))
         .where((e) =>
-            !prefs.hasInterests || prefs.categoryIds.contains(e.categoryId))
+            !hasUser ||
+            distanceInMiles(lat!, lng!, e.latitude!, e.longitude!) <=
+                _nearbyRadiusMiles)
         .toList();
   }
+
+  _Kind _kindOf(Event e) {
+    if (SavedEventsStore.instance.isSaved(e.id)) return _Kind.going;
+    final prefs = PreferencesStore.instance.prefs;
+    if (prefs.hasInterests && prefs.categoryIds.contains(e.categoryId)) {
+      return _Kind.forYou;
+    }
+    return _Kind.other;
+  }
+
+  static String _colorFor(_Kind k) => switch (k) {
+        _Kind.going => _goingColor,
+        _Kind.forYou => _forYouColor,
+        _Kind.other => _otherEventColor,
+      };
 
   void _onPrefsChanged() {
     if (mounted) setState(() {});
@@ -105,27 +139,42 @@ class _ExplorePageState extends State<ExplorePage> {
     try {
       do {
         _syncAgain = false;
-        final events = _mappableEvents;
+        // Draw order = stacking order: other, then for-you, then going.
+        final events = _mappableEvents
+          ..sort((a, b) => _kindOf(a).index.compareTo(_kindOf(b).index));
         await controller.clearCircles();
         _eventByCircleId.clear();
-        if (events.isEmpty) continue;
-        final circles = await controller.addCircles(
-          [
-            for (final e in events)
-              CircleOptions(
-                geometry: LatLng(e.latitude!, e.longitude!),
-                circleRadius: 9,
-                circleColor: _hex(e.category.color),
-                circleStrokeColor: '#FFFFFF',
-                circleStrokeWidth: 2.5,
-              ),
-          ],
-          [
-            for (final e in events) {'eventId': e.id}
-          ],
-        );
-        for (var i = 0; i < circles.length; i++) {
-          _eventByCircleId[circles[i].id] = events[i];
+        if (events.isNotEmpty) {
+          final circles = await controller.addCircles(
+            [
+              for (final e in events)
+                CircleOptions(
+                  geometry: LatLng(e.latitude!, e.longitude!),
+                  circleRadius: 9,
+                  circleColor: _colorFor(_kindOf(e)),
+                  circleStrokeColor: '#FFFFFF',
+                  circleStrokeWidth: 2.5,
+                ),
+            ],
+            [
+              for (final e in events) {'eventId': e.id}
+            ],
+          );
+          for (var i = 0; i < circles.length; i++) {
+            _eventByCircleId[circles[i].id] = events[i];
+          }
+        }
+        // User location dot, added last so it sits on top.
+        final lat = LocationService.instance.latitude;
+        final lng = LocationService.instance.longitude;
+        if (hasValidCoordinates(lat, lng)) {
+          await controller.addCircle(CircleOptions(
+            geometry: LatLng(lat!, lng!),
+            circleRadius: 8,
+            circleColor: _userDotColor,
+            circleStrokeColor: '#FFFFFF',
+            circleStrokeWidth: 3,
+          ));
         }
         final selected = _selected;
         if (selected != null && mounted) {
@@ -145,17 +194,12 @@ class _ExplorePageState extends State<ExplorePage> {
     if (event != null && mounted) setState(() => _selected = event);
   }
 
-  static String _hex(Color c) {
-    final rgb = c.toARGB32() & 0xFFFFFF;
-    return '#${rgb.toRadixString(16).padLeft(6, '0')}';
-  }
-
   @override
   Widget build(BuildContext context) {
     final count = _mappableEvents.length;
     final chipText = _loadError != null
         ? "Couldn't load events"
-        : '$count ${count == 1 ? 'event' : 'events'} on the map';
+        : '$count ${count == 1 ? 'event' : 'events'} near you';
 
     return Scaffold(
       backgroundColor: AppColors.ground,
@@ -257,6 +301,9 @@ class _ExplorePageState extends State<ExplorePage> {
                   ),
                 ),
 
+                if (_selected == null)
+                  const Positioned(left: 16, bottom: 16, child: _Legend()),
+
                 if (_selected != null)
                   Positioned(
                     left: 16,
@@ -274,6 +321,43 @@ class _ExplorePageState extends State<ExplorePage> {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _Legend extends StatelessWidget {
+  const _Legend();
+
+  @override
+  Widget build(BuildContext context) {
+    Widget item(Color c, String label) => Padding(
+          padding: const EdgeInsets.symmetric(vertical: 2),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            Container(
+                width: 10,
+                height: 10,
+                decoration: BoxDecoration(
+                    color: c,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white, width: 1.5))),
+            const SizedBox(width: 8),
+            Text(label,
+                style: GoogleFonts.outfit(fontSize: 11, color: AppColors.ink)),
+          ]),
+        );
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: AppColors.canvas,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+        item(const Color(0xFF757575), 'You'),
+        item(AppColors.blue, 'Going'),
+        item(AppColors.forest, 'For you'),
+        item(AppColors.purple, 'Nearby'),
+      ]),
     );
   }
 }
